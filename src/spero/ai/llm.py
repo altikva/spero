@@ -31,14 +31,18 @@ class AnthropicLLM:
     def __init__(self, *, model: str = DEFAULT_MODEL, api_key: str | None = None) -> None:
         import anthropic  # imported lazily so the dependency stays optional
 
-        self._client = anthropic.AsyncAnthropic(api_key=api_key)
+        # Bounded so a slow/hung API call can't stall a supervision tick.
+        self._client = anthropic.AsyncAnthropic(api_key=api_key, timeout=30.0, max_retries=1)
         self.model = model
 
     async def complete(self, prompt: str, *, system: str | None = None) -> str:
-        message = await self._client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            system=system or "You are an SRE assistant for the Spero supervision agent.",
-            messages=[{"role": "user", "content": prompt}],
-        )
+        try:
+            message = await self._client.messages.create(
+                model=self.model,
+                max_tokens=1024,
+                system=system or "You are an SRE assistant for the Spero supervision agent.",
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception:
+            return ""
         return "".join(block.text for block in message.content if block.type == "text")

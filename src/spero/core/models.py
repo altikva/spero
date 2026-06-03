@@ -66,7 +66,12 @@ class TargetPolicy(BaseModel):
         build_probe(self.probe)  # raises on unknown type / bad params
         last = 0
         for spec in self.remediations:
-            build_remediation(spec)
+            rem = build_remediation(spec)
+            if getattr(rem, "destructive", False) and spec.autonomy is Autonomy.auto:
+                raise ValueError(
+                    f"remediation {spec.type!r} is destructive; autonomy 'auto' is not allowed "
+                    "(use 'gated' so a human or the AI approver gates it, or 'suggest')"
+                )
             if spec.max_attempts < last:
                 raise ValueError(
                     f"remediation {spec.type!r} has max_attempts={spec.max_attempts} below a "
