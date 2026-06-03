@@ -33,7 +33,7 @@ def test_make_provider_local() -> None:
 
 
 def test_make_provider_ssh() -> None:
-    p = make_provider("ssh:web-01:ops")
+    p = make_provider("ssh:ops@web-01")
     assert isinstance(p, SSHProvider)
     assert p.host == "web-01"
     assert p.user == "ops"

@@ -6,14 +6,18 @@ and testable. Phase 1 adds the resource routers (nodes, events, targets, heal).
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+import yaml
+from fastapi import FastAPI, HTTPException
+from pydantic import ValidationError
 
 from spero import __version__
-from spero.config import settings
+from spero.config import Settings
+from spero.config import settings as default_settings
 from spero.core.policy import load_policy
 
 
-def create_app() -> FastAPI:
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or default_settings
     app = FastAPI(
         title="Spero",
         version=__version__,
@@ -26,7 +30,12 @@ def create_app() -> FastAPI:
 
     @app.get("/targets")
     def targets() -> dict[str, object]:
-        policy = load_policy(settings.policy_path)
+        try:
+            policy = load_policy(settings.policy_path)
+        except FileNotFoundError as exc:
+            raise HTTPException(503, f"policy file not found: {settings.policy_path}") from exc
+        except (yaml.YAMLError, ValidationError) as exc:
+            raise HTTPException(422, f"invalid policy: {exc}") from exc
         return {
             "frozen": policy.frozen,
             "targets": [
@@ -43,4 +52,5 @@ def create_app() -> FastAPI:
     return app
 
 
+# Module-level instance for uvicorn's "spero.api.app:app" import target.
 app = create_app()
