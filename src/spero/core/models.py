@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Autonomy(StrEnum):
@@ -54,8 +54,37 @@ class TargetPolicy(BaseModel):
         parse_provider_spec(value)  # raises ValueError on an unknown/garbage spec
         return value
 
+    @model_validator(mode="after")
+    def _validate_buildable(self) -> TargetPolicy:
+        """Fail at load if a probe/remediation type or its params are wrong, and
+        require the remediation list to be a coherent escalation ladder
+        (non-decreasing ``max_attempts``, so 'most-escalated eligible' is well-defined).
+        """
+        from spero.probes import build_probe
+        from spero.remediations import build_remediation
+
+        build_probe(self.probe)  # raises on unknown type / bad params
+        last = 0
+        for spec in self.remediations:
+            build_remediation(spec)
+            if spec.max_attempts < last:
+                raise ValueError(
+                    f"remediation {spec.type!r} has max_attempts={spec.max_attempts} below a "
+                    f"prior one ({last}); list them gentlest-first with non-decreasing thresholds"
+                )
+            last = spec.max_attempts
+        return self
+
 
 class Policy(BaseModel):
     version: int = 1
     frozen: bool = False  # global action freeze
     targets: list[TargetPolicy] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _unique_target_names(self) -> Policy:
+        names = [t.name for t in self.targets]
+        dupes = {n for n in names if names.count(n) > 1}
+        if dupes:
+            raise ValueError(f"duplicate target names: {sorted(dupes)}")
+        return self

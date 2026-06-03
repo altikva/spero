@@ -109,6 +109,61 @@ async def test_failure_count_accumulates_across_cycles() -> None:
     assert outcome.action.status is ActionStatus.applied
 
 
+async def test_counter_resets_after_apply_no_runaway() -> None:
+    # With max_attempts=2 and a persistently-down target, the engine applies on the
+    # threshold cycle, then must WAIT again next cycle (counter reset), not re-fire.
+    provider = ScriptedProvider(systemd_handler(active=False, restart_ok=True))
+    engine = _engine(_policy(autonomy="auto", max_attempts=2), provider)
+    o1 = (await engine.run_cycle())[0]
+    o2 = (await engine.run_cycle())[0]
+    o3 = (await engine.run_cycle())[0]
+    assert o1.action and o1.action.status is ActionStatus.waiting
+    assert o2.action and o2.action.status is ActionStatus.applied
+    assert o3.action and o3.action.status is ActionStatus.waiting  # reset, not re-fired
+
+
+async def test_escalation_picks_last_eligible_in_order() -> None:
+    policy = """
+    targets:
+      - name: web
+        provider: local
+        probe: {type: systemd, params: {unit: nginx.service}}
+        remediations:
+          - {type: restart, params: {unit: nginx.service}, autonomy: suggest, max_attempts: 1}
+          - {type: kill, params: {name: nginx}, autonomy: suggest, max_attempts: 1}
+    """
+    provider = ScriptedProvider(systemd_handler(active=False))
+    engine = _engine(policy, provider)
+    (outcome,) = await engine.run_cycle()
+    # both eligible at n=1; the more-escalated (last) one is selected
+    assert outcome.action is not None
+    assert outcome.action.remediation == "kill"
+
+
+async def test_one_raising_target_does_not_break_others() -> None:
+    from _fakes import ScriptedProvider as SP
+
+    def boom(_cmd: object) -> None:
+        raise RuntimeError("provider exploded")
+
+    good = ScriptedProvider(systemd_handler(active=True))
+    bad = SP(boom)  # its .run raises
+
+    def factory(spec: str):  # type: ignore[no-untyped-def]
+        return bad if spec.startswith("ssh") else good
+
+    policy = """
+    targets:
+      - {name: ok, provider: local, probe: {type: systemd, params: {unit: a.service}}}
+      - {name: broken, provider: ssh:web-01, probe: {type: systemd, params: {unit: b.service}}}
+    """
+    engine = Engine(load_policy_str(policy), provider_factory=factory)
+    outcomes = {o.target: o for o in await engine.run_cycle()}
+    assert outcomes["ok"].healthy
+    assert not outcomes["broken"].healthy
+    assert outcomes["broken"].detail.startswith("error")
+
+
 class SpyAlerter(Alerter):
     def __init__(self) -> None:
         self.fired: list[str] = []

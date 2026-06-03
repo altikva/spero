@@ -19,7 +19,10 @@ def build_remediation(spec: RemediationSpec) -> Remediation:
         raise ValueError(
             f"unknown remediation type: {spec.type!r} (have {sorted(REMEDIATIONS)})"
         ) from None
-    return cls(**spec.params)
+    try:
+        return cls(**spec.params)
+    except TypeError as exc:
+        raise ValueError(f"bad params for remediation {spec.type!r}: {exc}") from exc
 
 
 __all__ = [
