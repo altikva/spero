@@ -14,7 +14,7 @@ def test_example_policy_loads() -> None:
     p = load_policy(ROOT / "policies" / "example.yaml")
     assert p.version == 1
     assert p.frozen is False
-    assert {t.name for t in p.targets} == {"nginx", "data-disk"}
+    assert {t.name for t in p.targets} == {"nginx", "data-disk", "api-deployment"}
 
 
 def test_remediation_autonomy_and_attempts() -> None:
