@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import ClassVar
 
 from spero.providers.base import Provider
 
@@ -21,7 +22,7 @@ class Probe(ABC):
     Kubernetes probes (pod-ready, restart-count, OOMKilled, PVC-usage) in Phase 2.
     """
 
-    type: str
+    type: ClassVar[str] = ""
 
     @abstractmethod
     def check(self, provider: Provider) -> ProbeResult:

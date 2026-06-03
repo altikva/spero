@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Autonomy(StrEnum):
@@ -41,9 +41,18 @@ class RemediationSpec(BaseModel):
 
 class TargetPolicy(BaseModel):
     name: str
-    provider: str = "local"  # "local" or "ssh:<host>"
+    provider: str = "local"  # "local" or "ssh:[user@]host[:port]"
     probe: ProbeSpec
     remediations: list[RemediationSpec] = Field(default_factory=list)
+
+    @field_validator("provider")
+    @classmethod
+    def _validate_provider(cls, value: str) -> str:
+        # Deferred import keeps the core layer from hard-importing providers.
+        from spero.providers.host import parse_provider_spec
+
+        parse_provider_spec(value)  # raises ValueError on an unknown/garbage spec
+        return value
 
 
 class Policy(BaseModel):

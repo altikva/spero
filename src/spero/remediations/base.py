@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import ClassVar
 
 from spero.core.models import Autonomy
 from spero.providers.base import Provider
@@ -22,8 +23,8 @@ class Remediation(ABC):
     before applying. High-risk actions default to requiring a human.
     """
 
-    type: str
-    autonomy: Autonomy = Autonomy.suggest
+    type: ClassVar[str] = ""
+    autonomy: ClassVar[Autonomy] = Autonomy.suggest
 
     @abstractmethod
     def apply(self, provider: Provider) -> RemediationResult:

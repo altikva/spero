@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
+from typing import ClassVar
 
 from spero.providers.command import CommandResult
 
@@ -11,7 +12,7 @@ from spero.providers.command import CommandResult
 class Provider(ABC):
     """Executes commands against a target (a host, a pod, ...)."""
 
-    name: str
+    name: ClassVar[str] = ""
 
     @abstractmethod
     def run(

@@ -24,28 +24,28 @@ classifiers = [
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    "typer>=0.12",
-    "rich>=13.0",
+    "typer>=0.15",
+    "rich>=13.7",
     "questionary>=2.0",
-    "watchdog>=4.0",
-    "sqlalchemy>=2.0",
+    "watchdog>=5.0",
+    "sqlalchemy>=2.0.30",
     "alembic>=1.13",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
-    "pyyaml>=6.0",
+    "pyyaml>=6.0.2",            # 6.0.0/6.0.1 fail to build on Python 3.12+
     "cryptography>=42.0",
-    "apscheduler>=3.10",
+    "apscheduler>=3.10,<4",    # 4.x is still alpha with a rewritten API; cap it
     "httpx>=0.27",
-    "paramiko>=3.4",
+    "paramiko>=3.5,<6",        # avoid silent 4.x DSA/legacy-algorithm removals
 ]
 
 [project.optional-dependencies]
 # Phase 2 — Kubernetes provider
-k8s = ["kubernetes>=29.0"]
+k8s = ["kubernetes>=31.0"]
 # Phase 3 — AI layer: predictive, root-cause, NL interface
-ai = ["anthropic>=0.40", "rank-bm25>=0.2"]
+ai = ["anthropic>=0.69", "rank-bm25>=0.2"]
 # Phase 3 — expose Spero to agents over MCP
-mcp = ["fastmcp>=2.0"]
+mcp = ["fastmcp>=2.8,<3"]      # >=2.0 silently resolves to the re-architected 3.x
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
