@@ -34,6 +34,21 @@ targets:
           keep_days: 21
         autonomy: auto
 
+  - name: postgres
+    provider: ssh:ops@db-01
+    probe:
+      type: postgres
+      params:
+        host: localhost
+        port: 5432
+      interval: 30
+    remediations:
+      - type: restart
+        params:
+          unit: postgresql.service
+        autonomy: gated
+        max_attempts: 3
+
   - name: api-deployment
     provider: k8s:prod/api
     probe:
