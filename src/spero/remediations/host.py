@@ -31,7 +31,14 @@ class RestartService(Remediation):
 
 
 class RespawnProcess(Remediation):
-    """Run a start command, optionally as another user. Ports start_stop_process."""
+    """Run a start command, optionally as another user. Ports start_stop_process.
+
+    ``start`` is tokenized argv-style (``shlex.split``), never handed to a shell --
+    so policy params can't smuggle in ``;``/``$(...)``/redirection. If you genuinely
+    need shell features, make the start command explicit, e.g. ``sh -c "a && b"``.
+    Running as another user goes through ``runuser -u <user> --`` (argv, no shell),
+    not ``su -c`` (which would shell-interpret the command).
+    """
 
     type: ClassVar[str] = "respawn"
 
@@ -40,10 +47,8 @@ class RespawnProcess(Remediation):
         self.user = user
 
     async def apply(self, provider: Provider) -> RemediationResult:
-        if self.user:
-            cmd = ["su", "-", self.user, "-c", self.start]
-        else:
-            cmd = shlex.split(self.start)
+        argv = shlex.split(self.start)
+        cmd = ["runuser", "-u", self.user, "--", *argv] if self.user else argv
         r = await provider.run(cmd, timeout=60)
         return RemediationResult(r.ok, r.stderr.strip() or f"started {self.start!r}")
 

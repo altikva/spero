@@ -163,15 +163,16 @@ async def run_local_async(
                     env=proc_env,
                 )
         except OSError as exc:
+            # spawn failed (missing binary, EACCES); never ok, so just try again.
             result = CommandResult(NOT_FOUND_RC, "", f"{type(exc).__name__}: {exc}", display)
-            if result.ok:
-                break
             continue
 
         try:
             out, errb = await asyncio.wait_for(proc.communicate(), timeout)
             result = CommandResult(proc.returncode or 0, _as_text(out), _as_text(errb), display)
         except TimeoutError:
+            # kill + wait reaps the child and closes the pipe transports cleanly
+            # (verified leak-free on CPython 3.12, even with a full stdout buffer).
             proc.kill()
             await proc.wait()
             result = CommandResult(TIMEOUT_RC, "", f"timed out after {timeout}s", display)

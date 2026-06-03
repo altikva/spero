@@ -17,7 +17,10 @@ def build_probe(spec: ProbeSpec) -> Probe:
         cls = PROBES[spec.type]
     except KeyError:
         raise ValueError(f"unknown probe type: {spec.type!r} (have {sorted(PROBES)})") from None
-    return cls(**spec.params)
+    try:
+        return cls(**spec.params)
+    except TypeError as exc:
+        raise ValueError(f"bad params for probe {spec.type!r}: {exc}") from exc
 
 
 __all__ = [
