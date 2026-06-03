@@ -92,6 +92,71 @@ def run(
 
 
 @app.command()
+def watch(
+    policy: str = typer.Option(settings.policy_path, help="Path to the policy file."),
+    ai_approve: bool = typer.Option(
+        False, "--ai-approve", help="Let the AI approve gated remediations (agentic mode)."
+    ),
+    store: bool = typer.Option(True, help="Persist events to the store."),
+) -> None:
+    """Supervise continuously: each target on its own probe interval, until Ctrl-C."""
+    p = load_policy(policy)
+    asyncio.run(_run_watch(p, ai_approve=ai_approve, store=store))
+
+
+async def _run_watch(policy_obj: object, *, ai_approve: bool, store: bool) -> None:
+    import signal
+
+    from spero.core.models import Policy
+    from spero.core.watch import watch as watch_loop
+
+    assert isinstance(policy_obj, Policy)
+    approver = AIApprover(_llm()).approve if ai_approve else deny_all
+    engine = Engine(policy_obj, approver=approver)
+    store_engine = _store_engine() if store else None
+
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:  # e.g. Windows
+            pass
+
+    mode = "agentic" if ai_approve else "human-gated"
+    console.print(
+        f"[green]spero watching[/] {len(policy_obj.targets)} target(s) ({mode}) - Ctrl-C to stop"
+    )
+    await watch_loop(engine, policy_obj, store_engine=store_engine, on_outcome=_log_outcome)
+    console.print("[dim]stopped[/]")
+
+
+def _log_outcome(outcome: TargetOutcome) -> None:
+    # Quiet on the happy path; a daemon should only speak when something matters.
+    action = outcome.action
+    noteworthy = {ActionStatus.applied, ActionStatus.failed, ActionStatus.awaiting_approval}
+    if outcome.healthy and not (action and action.status in noteworthy):
+        return
+    when = _now()
+    if not outcome.healthy:
+        suffix = ""
+        if action:
+            style = _STATUS_STYLE.get(action.status, "white")
+            suffix = f" [{style}]{action.remediation}:{action.status.value}[/]"
+        console.print(f"[dim]{when}[/] [red]{outcome.target} down[/]: {outcome.detail}{suffix}")
+    elif action:
+        console.print(
+            f"[dim]{when}[/] [green]{outcome.target} ok[/] ({action.remediation} cleared)"
+        )
+
+
+def _now() -> str:
+    from datetime import datetime
+
+    return datetime.now().strftime("%H:%M:%S")
+
+
+@app.command()
 def ask(
     question: str = typer.Argument(..., help="A question about what Spero has seen."),
 ) -> None:
