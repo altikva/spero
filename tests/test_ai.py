@@ -77,10 +77,30 @@ async def test_nl_query_with_and_without_model() -> None:
     assert "No model configured" in fallback
 
 
-async def test_ai_approver_yes_no_and_null() -> None:
+async def test_ai_approver_exact_match_only() -> None:
     target = TargetPolicy(name="web", probe={"type": "systemd", "params": {"unit": "x.service"}})
     spec = RemediationSpec(type="restart", params={"unit": "x.service"})
     assert await AIApprover(FakeLLM("yes")).approve(target, spec) is True
+    assert await AIApprover(FakeLLM("YES")).approve(target, spec) is True
     assert await AIApprover(FakeLLM("no")).approve(target, spec) is False
+    # a loose prefix match must NOT approve a hedged or negative answer
+    assert await AIApprover(FakeLLM("yes, but only with a human")).approve(target, spec) is False
+    assert await AIApprover(FakeLLM("y'know, the answer is no")).approve(target, spec) is False
+    # reasoning followed by a verdict on the last line
+    assert await AIApprover(FakeLLM("It looks risky.\nno")).approve(target, spec) is False
     # fails closed with no model configured
     assert await AIApprover(NullLLM()).approve(target, spec) is False
+
+
+async def test_ai_approver_fails_closed_on_llm_error() -> None:
+    class BoomLLM(LLMClient):
+        async def complete(self, prompt: str, *, system: str | None = None) -> str:
+            raise RuntimeError("api down")
+
+    target = TargetPolicy(name="web", probe={"type": "systemd", "params": {"unit": "x.service"}})
+    spec = RemediationSpec(type="restart", params={"unit": "x.service"})
+    assert await AIApprover(BoomLLM()).approve(target, spec) is False
+
+
+def test_forecast_already_over_threshold_returns_zero() -> None:
+    assert forecast_threshold_crossing([(0.0, 95.0), (1.0, 96.0)], 90.0) == 0.0

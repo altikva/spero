@@ -26,6 +26,8 @@ class HttpProbe(Probe):
     def __init__(
         self, url: str, expect_status: int = 200, insecure: bool = False, max_time: int = 10
     ) -> None:
+        if not url.startswith(("http://", "https://")):
+            raise ValueError(f"http probe url must be http(s): {url!r}")
         self.url = url
         self.expect_status = int(expect_status)
         self.insecure = insecure
@@ -44,7 +46,8 @@ class HttpProbe(Probe):
         ]
         if self.insecure:
             cmd.append("-k")
-        cmd.append(self.url)
+        # `--` so a URL can never be parsed as a curl flag (-O, -K file, ...).
+        cmd += ["--", self.url]
         r = await provider.run(cmd, timeout=self.max_time + 5)
         code = r.stdout.strip()
         healthy = r.ok and code == str(self.expect_status)

@@ -23,6 +23,10 @@ class Remediation(ABC):
     """
 
     type: ClassVar[str] = ""
+    # Destructive actions (data loss / forceful kill) may never run unattended:
+    # the policy validator forbids autonomy=auto for them, so they always need a
+    # gate (a human, or the AI approver under --ai-approve).
+    destructive: ClassVar[bool] = False
 
     @abstractmethod
     async def apply(self, provider: Provider) -> RemediationResult:

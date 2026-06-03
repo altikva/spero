@@ -38,6 +38,24 @@ def test_kubectl_prefix() -> None:
     assert KubernetesProvider().prefix() == ["kubectl"]
 
 
+def test_k8s_spec_with_extra_segment_rejected() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="too many"):
+        make_provider("k8s:ctx/ns/extra")
+
+
+async def test_deployment_scaled_to_zero_is_healthy() -> None:
+    import json
+
+    from spero.probes.kubernetes import DeploymentProbe
+
+    zero = json.dumps({"spec": {"replicas": 0}, "status": {}})
+    r = await DeploymentProbe("paused").check(ScriptedProvider(fixed(0, zero)))
+    assert r.healthy
+    assert "scaled to 0" in r.detail
+
+
 async def test_pod_ready_probe() -> None:
     provider = ScriptedProvider(fixed(0, PODS_JSON))
     r = await PodReadyProbe(selector="app=web", min_ready=1).check(provider)

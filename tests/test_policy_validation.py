@@ -62,6 +62,33 @@ def test_duplicate_target_names_rejected() -> None:
         )
 
 
+def test_destructive_remediation_cannot_be_auto() -> None:
+    # rotate deletes files -> autonomy 'auto' must be rejected at load
+    with pytest.raises(ValidationError, match="destructive"):
+        load_policy_str(
+            """
+            targets:
+              - name: disk
+                probe: {type: disk, params: {path: /data}}
+                remediations:
+                  - {type: rotate, params: {path: /data/logs}, autonomy: auto}
+            """
+        )
+
+
+def test_destructive_remediation_gated_is_allowed() -> None:
+    p = load_policy_str(
+        """
+        targets:
+          - name: disk
+            probe: {type: disk, params: {path: /data}}
+            remediations:
+              - {type: rotate, params: {path: /data/logs}, autonomy: gated}
+        """
+    )
+    assert p.targets[0].remediations[0].type == "rotate"
+
+
 def test_decreasing_max_attempts_rejected() -> None:
     with pytest.raises(ValidationError, match="non-decreasing"):
         load_policy_str(

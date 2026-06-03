@@ -79,6 +79,7 @@ class Engine:
         self._open_alerts: set[str] = set()
         self._events: list[Event] = []
         self._lock = asyncio.Lock()
+        self._persist_lock = asyncio.Lock()
 
     @property
     def events(self) -> list[Event]:
@@ -181,20 +182,30 @@ class Engine:
             return ActionOutcome(spec.type, ActionStatus.applied, res.detail)
         return ActionOutcome(spec.type, ActionStatus.failed, res.detail)
 
-    def persist(self, store_engine: object) -> None:
-        """Flush collected events to the store, then clear them."""
+    async def persist(self, store_engine: object) -> None:
+        """Flush collected events to the store, then clear them.
+
+        Lock-guarded so concurrent ticks can't race the batch swap, and the
+        (blocking) DB write runs in a worker thread so it never stalls the event
+        loop -- the rest of the fleet keeps probing while one persist commits.
+        """
         from sqlalchemy import Engine as SAEngine
 
         from spero.store.db import session_scope
 
-        if not self._events or not isinstance(store_engine, SAEngine):
+        if not isinstance(store_engine, SAEngine):
             return
-        # Swap the batch out first so a concurrent cycle's appends aren't lost or
-        # half-flushed; restore on failure so nothing is dropped silently.
-        batch, self._events = self._events, []
-        try:
-            with session_scope(store_engine) as session:
-                session.add_all(batch)
-        except Exception:
-            self._events = batch + self._events
-            raise
+        async with self._persist_lock:
+            if not self._events:
+                return
+            batch, self._events = self._events, []
+
+            def _write() -> None:
+                with session_scope(store_engine) as session:
+                    session.add_all(batch)
+
+            try:
+                await asyncio.to_thread(_write)
+            except Exception:
+                self._events[:0] = batch  # in-place prepend preserves order
+                raise
