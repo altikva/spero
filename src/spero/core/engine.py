@@ -99,6 +99,16 @@ class Engine:
         async with self._lock:
             return list(await asyncio.gather(*(self._supervise(t) for t in self.policy.targets)))
 
+    async def supervise(self, target: TargetPolicy) -> TargetOutcome:
+        """Supervise a single target (fault-isolated).
+
+        Used by the watch scheduler, which runs one job per target at the target's
+        own interval with ``max_instances=1`` -- a target can't overlap itself, and
+        distinct targets touch distinct state, so this needs no global lock. Don't
+        mix concurrent ``supervise()`` and ``run_cycle()`` on the same engine.
+        """
+        return await self._supervise(target)
+
     async def _supervise(self, target: TargetPolicy) -> TargetOutcome:
         # One misbehaving target (a probe/remediation that *raises*) must never take
         # down supervision of the others, so isolate every target here.

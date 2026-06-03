@@ -37,6 +37,11 @@ uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
 spero status                       # show targets from policies/example.yaml
+spero run                          # run one supervision cycle
+spero watch                        # supervise continuously (each target on its interval)
+spero watch --ai-approve           # agentic: the model decides gated remediations
+spero heal nginx                   # probe one target, walk its remediations interactively
+spero ask "what flapped today?"    # natural-language query over the event history
 spero serve                        # run the control-plane API on :8800
 pytest                             # run the suite
 ```
