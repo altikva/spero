@@ -10,8 +10,10 @@ root-cause, and policy-gated remediation.
 
 Shipped under [Altikva](https://altikva.com).
 
-> Status: pre-alpha. Phase 0 (foundations) is in place: the host command layer,
-> the policy model, the persistence store, and a FastAPI control plane, all under test.
+> Status: pre-alpha. Phase 1 (host self-healing) works end to end: an async
+> provider layer (local + asyncssh), host probes (process, systemd, port, disk),
+> remediations (restart, respawn, kill, rotate), and the supervision engine with
+> failure counting, escalation, autonomy gating, and alerting -- all under test.
 
 ## Concepts
 
@@ -41,8 +43,8 @@ pytest                             # run the suite
 
 ## Roadmap
 
-- **Phase 0 — Foundations** *(here)*: Py3, FastAPI, policy model, host command layer, store, CI.
-- **Phase 1 — Host self-healing**: host probes + remediations, the supervision loop, alerting.
+- **Phase 0 — Foundations** *(done)*: Py3, FastAPI, policy model, host command layer, store, CI.
+- **Phase 1 — Host self-healing** *(done)*: async providers, host probes + remediations, the supervision engine, alerting.
 - **Phase 2 — Kubernetes**: a `k8s` provider with workload probes and remediations.
 - **Phase 3 — AI**: predictive (disk-fill, flapping) → LLM root-cause → NL ops interface → agentic remediation.
 - **Phase 4 — Data infra**: Kafka / Trino / ClickHouse / Postgres / Spark adapters.
