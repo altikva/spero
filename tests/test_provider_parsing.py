@@ -38,21 +38,14 @@ def test_bad_dest_raises(bad: str) -> None:
         parse_ssh_dest(bad)
 
 
-def test_make_provider_builds_port_argv() -> None:
+def test_make_provider_carries_port() -> None:
     p = make_provider("ssh:ops@web-01:2222")
     assert isinstance(p, SSHProvider)
-    argv = p.build_argv("uptime")
-    assert "-p" in argv
-    assert "2222" in argv
-    assert "ops@web-01" in argv
+    assert p.port == 2222
+    assert p.user == "ops"
+    assert p.host == "web-01"
 
 
 def test_make_provider_rejects_garbage() -> None:
     with pytest.raises(ValueError, match="unknown provider"):
         make_provider("sssh:web-01")
-
-
-def test_ssh_provider_rejects_cwd_env() -> None:
-    p = SSHProvider("web-01")
-    with pytest.raises(NotImplementedError):
-        p.run("uptime", cwd="/tmp")

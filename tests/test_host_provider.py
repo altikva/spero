@@ -1,4 +1,4 @@
-"""Tests for host providers (local execution + SSH argv construction)."""
+"""Tests for host providers (async local execution + SSH wiring)."""
 
 from __future__ import annotations
 
@@ -9,22 +9,14 @@ import pytest
 from spero.providers.host import LocalProvider, SSHProvider, make_provider
 
 
-def test_local_provider_runs() -> None:
-    r = LocalProvider().run([sys.executable, "-c", "print('ok')"])
+async def test_local_provider_runs() -> None:
+    r = await LocalProvider().run([sys.executable, "-c", "print('ok')"])
     assert r.ok
     assert "ok" in r.stdout
 
 
-def test_ssh_argv_includes_destination_and_command() -> None:
-    p = SSHProvider("web-01", user="ops")
-    argv = p.build_argv("systemctl is-active nginx")
-    assert argv[0] == "ssh"
-    assert "ops@web-01" in argv
-    assert argv[-1] == "systemctl is-active nginx"
-    assert "BatchMode=yes" in argv
-
-
-def test_ssh_argv_without_user() -> None:
+def test_ssh_destination() -> None:
+    assert SSHProvider("web-01", user="ops").destination == "ops@web-01"
     assert SSHProvider("web-01").destination == "web-01"
 
 
@@ -42,3 +34,9 @@ def test_make_provider_ssh() -> None:
 def test_make_provider_unknown() -> None:
     with pytest.raises(ValueError, match="unknown provider"):
         make_provider("magic:foo")
+
+
+async def test_ssh_provider_rejects_cwd_env() -> None:
+    p = SSHProvider("web-01")
+    with pytest.raises(NotImplementedError):
+        await p.run("uptime", cwd="/tmp")

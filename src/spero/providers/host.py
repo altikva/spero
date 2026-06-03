@@ -1,39 +1,35 @@
-"""Host providers: run commands locally or over SSH.
+"""Host providers: run commands locally or over SSH (async).
 
-``LocalProvider`` runs on the machine Spero lives on. ``SSHProvider`` shells out
-to ``ssh`` for now (faithful to the original bot); a native async transport
-(asyncssh) is the Phase 1 follow-up for the async control plane. Both share the
-local executor in :mod:`spero.providers.command`.
+``LocalProvider`` runs on the machine Spero lives on via asyncio subprocesses.
+``SSHProvider`` uses asyncssh, the native-async transport that fits a control
+plane fanning remediation across many hosts concurrently.
 
 Provider policy strings: ``local`` or ``ssh:[user@]host[:port]``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import shlex
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
+
+import asyncssh
 
 from spero.providers.base import Provider
-from spero.providers.command import CommandResult, run_local
+from spero.providers.command import NOT_FOUND_RC, TIMEOUT_RC, CommandResult, run_local_async
 
-# Non-interactive, fail-fast SSH defaults. Replaces the bot's free-form SSH_OPTS.
-# `accept-new` is trust-on-first-use: fine for dev, tighten to `yes` with a managed
-# known_hosts in production (host-key policy is configurable per provider).
-DEFAULT_SSH_OPTS: tuple[str, ...] = (
-    "-o",
-    "BatchMode=yes",
-    "-o",
-    "StrictHostKeyChecking=accept-new",
-    "-o",
-    "ConnectTimeout=10",
-)
+# Sentinel: use asyncssh's default known_hosts handling (verify against the user's
+# ~/.ssh/known_hosts). Pass known_hosts=None to a provider to DISABLE verification
+# (trust-on-first-use, dev only); pass a path to use a managed known_hosts file.
+_DEFAULT_KNOWN_HOSTS = object()
 
 
 class LocalProvider(Provider):
     name = "local"
 
-    def run(
+    async def run(
         self,
         command: str | Sequence[str],
         *,
@@ -42,7 +38,7 @@ class LocalProvider(Provider):
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
     ) -> CommandResult:
-        return run_local(command, timeout=timeout, retries=retries, cwd=cwd, env=env)
+        return await run_local_async(command, timeout=timeout, retries=retries, cwd=cwd, env=env)
 
 
 class SSHProvider(Provider):
@@ -54,29 +50,30 @@ class SSHProvider(Provider):
         *,
         user: str | None = None,
         port: int | None = None,
-        ssh_opts: Sequence[str] = DEFAULT_SSH_OPTS,
-        ssh_bin: str = "ssh",
+        known_hosts: Any = _DEFAULT_KNOWN_HOSTS,
+        connect_timeout: float = 10.0,
     ) -> None:
         self.host = host
         self.user = user
         self.port = port
-        self.ssh_opts = tuple(ssh_opts)
-        self.ssh_bin = ssh_bin
+        self.known_hosts = known_hosts
+        self.connect_timeout = connect_timeout
 
     @property
     def destination(self) -> str:
         return f"{self.user}@{self.host}" if self.user else self.host
 
-    def build_argv(self, command: str | Sequence[str]) -> list[str]:
-        """Build the local ``ssh`` argument vector for a remote command."""
-        remote = command if isinstance(command, str) else shlex.join(command)
-        argv = [self.ssh_bin, *self.ssh_opts]
+    def _connect_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {"connect_timeout": self.connect_timeout}
         if self.port is not None:
-            argv += ["-p", str(self.port)]
-        argv += [self.destination, remote]
-        return argv
+            kwargs["port"] = self.port
+        if self.user is not None:
+            kwargs["username"] = self.user
+        if self.known_hosts is not _DEFAULT_KNOWN_HOSTS:
+            kwargs["known_hosts"] = self.known_hosts
+        return kwargs
 
-    def run(
+    async def run(
         self,
         command: str | Sequence[str],
         *,
@@ -86,10 +83,37 @@ class SSHProvider(Provider):
         env: Mapping[str, str] | None = None,
     ) -> CommandResult:
         if cwd is not None or env is not None:
-            # Inject these remotely once we have a real transport; until then,
-            # fail loud rather than silently ignore the caller's intent.
+            # Bake cwd/env into the command until we wire them through asyncssh.
             raise NotImplementedError("SSHProvider does not yet support cwd/env; use the command")
-        return run_local(self.build_argv(command), timeout=timeout, retries=retries)
+        remote = command if isinstance(command, str) else shlex.join(command)
+
+        result = CommandResult(returncode=-1, stdout="", stderr="", command=remote)
+        for _attempt in range(retries + 1):
+            try:
+                async with asyncssh.connect(self.host, **self._connect_kwargs()) as conn:
+                    completed = await asyncio.wait_for(conn.run(remote, check=False), timeout)
+                result = CommandResult(
+                    completed.exit_status or 0,
+                    _ssh_text(completed.stdout),
+                    _ssh_text(completed.stderr),
+                    remote,
+                )
+            except TimeoutError:
+                result = CommandResult(TIMEOUT_RC, "", f"timed out after {timeout}s", remote)
+                break
+            except (OSError, asyncssh.Error) as exc:
+                result = CommandResult(NOT_FOUND_RC, "", f"{type(exc).__name__}: {exc}", remote)
+            if result.ok:
+                break
+        return result
+
+
+def _ssh_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    return str(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,10 +178,10 @@ def parse_provider_spec(spec: str) -> tuple[str, SSHTarget | None]:
     )
 
 
-def make_provider(spec: str, *, ssh_opts: Sequence[str] = DEFAULT_SSH_OPTS) -> Provider:
+def make_provider(spec: str, *, known_hosts: Any = _DEFAULT_KNOWN_HOSTS) -> Provider:
     """Resolve a policy provider string to a concrete Provider."""
     kind, target = parse_provider_spec(spec)
     if kind == "local":
         return LocalProvider()
     assert target is not None
-    return SSHProvider(target.host, user=target.user, port=target.port, ssh_opts=ssh_opts)
+    return SSHProvider(target.host, user=target.user, port=target.port, known_hosts=known_hosts)
