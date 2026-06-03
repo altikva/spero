@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from spero.store.models import Base
+from spero.store.models import Base, Event
 
 
 def make_engine(url: str = "sqlite:///spero.db", *, echo: bool = False) -> Engine:
@@ -17,6 +17,15 @@ def make_engine(url: str = "sqlite:///spero.db", *, echo: bool = False) -> Engin
 
 def init_db(engine: Engine) -> None:
     Base.metadata.create_all(engine)
+
+
+def recent_events(engine: Engine, *, target: str | None = None, limit: int = 200) -> list[Event]:
+    """Most recent events (optionally for one target), newest first."""
+    stmt = select(Event).order_by(Event.created_at.desc()).limit(limit)
+    if target is not None:
+        stmt = stmt.where(Event.target == target)
+    with session_scope(engine) as session:
+        return list(session.scalars(stmt).all())
 
 
 @contextmanager

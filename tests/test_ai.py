@@ -1,0 +1,86 @@
+"""Tests for the AI layer: predictive (pure), and the LLM-backed pieces via a fake."""
+
+from __future__ import annotations
+
+from spero.ai import (
+    AIApprover,
+    NullLLM,
+    detect_flapping,
+    diagnose_failure,
+    forecast_threshold_crossing,
+    nl_query,
+    parse_pct,
+)
+from spero.ai.llm import LLMClient
+from spero.core.models import RemediationSpec, TargetPolicy
+
+
+class FakeLLM(LLMClient):
+    def __init__(self, reply: str) -> None:
+        self.reply = reply
+        self.prompts: list[str] = []
+
+    async def complete(self, prompt: str, *, system: str | None = None) -> str:
+        self.prompts.append(prompt)
+        return self.reply
+
+
+# --- predictive (pure, no model) -------------------------------------------------
+
+
+def test_forecast_rising_series_reaches_threshold() -> None:
+    # 10%/unit rising from 50; should hit 90 in ~4 time units after the last sample.
+    samples = [(0.0, 50.0), (1.0, 60.0), (2.0, 70.0)]
+    eta = forecast_threshold_crossing(samples, 90.0)
+    assert eta is not None
+    assert abs(eta - 2.0) < 1e-6
+
+
+def test_forecast_flat_series_returns_none() -> None:
+    assert forecast_threshold_crossing([(0.0, 50.0), (1.0, 50.0)], 90.0) is None
+
+
+def test_forecast_needs_two_samples() -> None:
+    assert forecast_threshold_crossing([(0.0, 50.0)], 90.0) is None
+
+
+def test_detect_flapping() -> None:
+    assert detect_flapping([True, False, True, False], max_transitions=3)
+    assert not detect_flapping([True, True, False], max_transitions=3)
+
+
+def test_parse_pct() -> None:
+    assert parse_pct("/data at 73% (threshold 90%)") == 73
+    assert parse_pct("no number here") is None
+
+
+# --- LLM-backed (via FakeLLM / NullLLM) ------------------------------------------
+
+
+async def test_diagnose_uses_model_when_present() -> None:
+    llm = FakeLLM("disk filled from log spam")
+    out = await diagnose_failure("web", "down", ["evt1", "evt2"], llm)
+    assert out == "disk filled from log spam"
+    assert "web" in llm.prompts[0]
+
+
+async def test_diagnose_falls_back_without_model() -> None:
+    out = await diagnose_failure("web", "down", ["evt1"], NullLLM())
+    assert "web" in out
+    assert "No model configured" in out
+
+
+async def test_nl_query_with_and_without_model() -> None:
+    docs = ["2026-01-01 probe_fail web: nginx is inactive", "2026-01-01 info db: ok"]
+    assert await nl_query("why did web fail?", docs, FakeLLM("nginx crashed")) == "nginx crashed"
+    fallback = await nl_query("why did web fail?", docs, NullLLM())
+    assert "No model configured" in fallback
+
+
+async def test_ai_approver_yes_no_and_null() -> None:
+    target = TargetPolicy(name="web", probe={"type": "systemd", "params": {"unit": "x.service"}})
+    spec = RemediationSpec(type="restart", params={"unit": "x.service"})
+    assert await AIApprover(FakeLLM("yes")).approve(target, spec) is True
+    assert await AIApprover(FakeLLM("no")).approve(target, spec) is False
+    # fails closed with no model configured
+    assert await AIApprover(NullLLM()).approve(target, spec) is False

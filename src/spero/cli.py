@@ -4,20 +4,32 @@ for the human-in-the-loop approvals on gated remediations."""
 from __future__ import annotations
 
 import asyncio
+import os
 
 import questionary
 import typer
 from rich.console import Console
 from rich.table import Table
+from sqlalchemy import Engine as SAEngine
 
 from spero import __version__
+from spero.ai import (
+    AIApprover,
+    NullLLM,
+    diagnose_failure,
+    forecast_threshold_crossing,
+    nl_query,
+    parse_pct,
+)
+from spero.ai.llm import LLMClient
 from spero.config import settings
-from spero.core.engine import ActionStatus, Engine, TargetOutcome
+from spero.core.engine import ActionStatus, Engine, TargetOutcome, deny_all
 from spero.core.models import Autonomy, RemediationSpec, TargetPolicy
 from spero.core.policy import load_policy
 from spero.probes import build_probe
 from spero.providers.host import make_provider
 from spero.remediations import build_remediation
+from spero.store import Event, init_db, make_engine, recent_events
 
 app = typer.Typer(add_completion=False, help="Spero - self-healing supervision agent.")
 console = Console()
@@ -60,12 +72,63 @@ def status(
 @app.command()
 def run(
     policy: str = typer.Option(settings.policy_path, help="Path to the policy file."),
+    ai_approve: bool = typer.Option(
+        False, "--ai-approve", help="Let the AI approve gated remediations (agentic mode)."
+    ),
+    store: bool = typer.Option(True, help="Persist events to the store."),
 ) -> None:
-    """Run one supervision cycle over the policy (unattended; gated actions wait)."""
+    """Run one supervision cycle over the policy.
+
+    Unattended, gated actions wait for a human by default; pass --ai-approve to let
+    the configured model decide them.
+    """
     p = load_policy(policy)
-    engine = Engine(p)
+    approver = AIApprover(_llm()).approve if ai_approve else deny_all
+    engine = Engine(p, approver=approver)
     outcomes = asyncio.run(engine.run_cycle())
     _render_outcomes(outcomes)
+    if store:
+        engine.persist(_store_engine())
+
+
+@app.command()
+def ask(
+    question: str = typer.Argument(..., help="A question about what Spero has seen."),
+) -> None:
+    """Ask a natural-language question over the recorded event history."""
+    docs = [_format_event(e) for e in _events()]
+    console.print(asyncio.run(nl_query(question, docs, _llm())))
+
+
+@app.command()
+def diagnose(target: str = typer.Argument(..., help="Target to diagnose.")) -> None:
+    """LLM-assisted root-cause sketch for a target, from its recent events."""
+    events = _events(target=target)
+    if not events:
+        console.print(f"[dim]no recorded events for {target}[/]")
+        return
+    detail = next((e.detail for e in events if e.kind == "probe_fail"), events[0].detail)
+    recent = [_format_event(e) for e in reversed(events[:20])]  # oldest-last
+    console.print(asyncio.run(diagnose_failure(target, detail, recent, _llm())))
+
+
+@app.command()
+def forecast(
+    target: str = typer.Argument(..., help="A disk target to forecast."),
+    threshold: int = typer.Option(90, help="Usage percent to forecast crossing."),
+) -> None:
+    """Forecast when a disk target will cross a usage threshold (linear trend)."""
+    samples: list[tuple[float, float]] = []
+    for e in _events(target=target):
+        pct = parse_pct(e.detail)
+        if pct is not None and e.created_at is not None:
+            samples.append((e.created_at.timestamp(), float(pct)))
+    samples.sort()
+    eta = forecast_threshold_crossing(samples, threshold)
+    if eta is None:
+        console.print(f"[dim]{target}: not trending toward {threshold}% (or too few samples)[/]")
+    else:
+        console.print(f"{target}: ~{eta / 3600:.1f}h until {threshold}% ({len(samples)} samples)")
 
 
 @app.command()
@@ -126,6 +189,33 @@ def serve(
     import uvicorn
 
     uvicorn.run("spero.api.app:app", host=host, port=port)
+
+
+def _llm() -> LLMClient:
+    """Use Claude when a key and the optional dep are present, else the no-op model."""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            from spero.ai import AnthropicLLM
+
+            return AnthropicLLM()
+        except ImportError:
+            console.print("[dim]anthropic not installed; falling back to NullLLM[/]")
+    return NullLLM()
+
+
+def _store_engine() -> SAEngine:
+    engine = make_engine(settings.database_url)
+    init_db(engine)
+    return engine
+
+
+def _events(*, target: str | None = None, limit: int = 200) -> list[Event]:
+    return recent_events(_store_engine(), target=target, limit=limit)
+
+
+def _format_event(e: Event) -> str:
+    when = e.created_at.strftime("%Y-%m-%d %H:%M") if e.created_at else "?"
+    return f"{when} {e.kind} {e.target}: {e.detail}"
 
 
 def _render_outcomes(outcomes: list[TargetOutcome]) -> None:

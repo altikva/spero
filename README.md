@@ -10,10 +10,10 @@ root-cause, and policy-gated remediation.
 
 Shipped under [Altikva](https://altikva.com).
 
-> Status: pre-alpha. Phase 1 (host self-healing) works end to end: an async
-> provider layer (local + asyncssh), host probes (process, systemd, port, disk),
-> remediations (restart, respawn, kill, rotate), and the supervision engine with
-> failure counting, escalation, autonomy gating, and alerting -- all under test.
+> Status: pre-alpha, but the spine is complete. Spero supervises and heals Linux
+> hosts (local + asyncssh) and Kubernetes (kubectl) through one engine, with an AI
+> layer for prediction, root-cause, natural-language queries, and agentic
+> (policy-gated) remediation. 91 tests, ruff + mypy clean.
 
 ## Concepts
 
@@ -45,8 +45,8 @@ pytest                             # run the suite
 
 - **Phase 0 — Foundations** *(done)*: Py3, FastAPI, policy model, host command layer, store, CI.
 - **Phase 1 — Host self-healing** *(done)*: async providers, host probes + remediations, the supervision engine, alerting.
-- **Phase 2 — Kubernetes**: a `k8s` provider with workload probes and remediations.
-- **Phase 3 — AI**: predictive (disk-fill, flapping) → LLM root-cause → NL ops interface → agentic remediation.
+- **Phase 2 — Kubernetes** *(done)*: a `k8s` provider (kubectl) with pod/deployment probes and rollout-restart / scale / delete-pod remediations.
+- **Phase 3 — AI** *(done)*: predictive (disk-fill forecast, flapping), LLM root-cause + incident summaries, NL ops queries (`spero ask`), and agentic remediation (`spero run --ai-approve`). Claude-backed, works without a key via a fallback.
 - **Phase 4 — Data infra**: Kafka / Trino / ClickHouse / Postgres / Spark adapters.
 
 ## License
