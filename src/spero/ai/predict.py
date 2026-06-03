@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from itertools import pairwise
 
 _PCT = re.compile(r"(\d+)%")
 
@@ -44,7 +45,7 @@ def forecast_threshold_crossing(
 
 def detect_flapping(history: Sequence[bool], max_transitions: int = 3) -> bool:
     """True if the health history flips state at least ``max_transitions`` times."""
-    transitions = sum(1 for a, b in zip(history, history[1:], strict=False) if a != b)
+    transitions = sum(1 for a, b in pairwise(history) if a != b)
     return transitions >= max_transitions
 
 
