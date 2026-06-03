@@ -5,9 +5,19 @@ from __future__ import annotations
 from spero.core.models import RemediationSpec
 from spero.remediations.base import Remediation, RemediationResult
 from spero.remediations.host import KillProcess, RespawnProcess, RestartService, RotateLogs
+from spero.remediations.kubernetes import DeletePod, RolloutRestart, ScaleDeployment
 
 REMEDIATIONS: dict[str, type[Remediation]] = {
-    cls.type: cls for cls in (RestartService, RespawnProcess, KillProcess, RotateLogs)
+    cls.type: cls
+    for cls in (
+        RestartService,
+        RespawnProcess,
+        KillProcess,
+        RotateLogs,
+        RolloutRestart,
+        ScaleDeployment,
+        DeletePod,
+    )
 }
 
 
@@ -27,11 +37,14 @@ def build_remediation(spec: RemediationSpec) -> Remediation:
 
 __all__ = [
     "REMEDIATIONS",
+    "DeletePod",
     "KillProcess",
     "Remediation",
     "RemediationResult",
     "RespawnProcess",
     "RestartService",
+    "RolloutRestart",
     "RotateLogs",
+    "ScaleDeployment",
     "build_remediation",
 ]

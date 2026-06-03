@@ -20,7 +20,7 @@ targets:
         max_attempts: 2
 
   - name: data-disk
-    provider: ssh:web-01
+    provider: ssh:ops@web-01
     probe:
       type: disk
       params:
@@ -33,3 +33,23 @@ targets:
           path: /data/logs
           keep_days: 21
         autonomy: auto
+
+  - name: api-deployment
+    provider: k8s:prod/api
+    probe:
+      type: deployment
+      params:
+        name: api
+      interval: 30
+    remediations:
+      # gentle first (rollout restart), escalate to recreating pods if it persists
+      - type: rollout-restart
+        params:
+          deployment: api
+        autonomy: gated
+        max_attempts: 2
+      - type: delete-pod
+        params:
+          selector: app=api
+        autonomy: gated
+        max_attempts: 5
