@@ -1,0 +1,42 @@
+# systemd unit for the Spero watch daemon.
+#
+# Install (as root):
+#   useradd --system --home /var/lib/spero --shell /usr/sbin/nologin spero
+#   install -d -o spero -g spero /var/lib/spero /etc/spero
+#   python3 -m venv /opt/spero/.venv && /opt/spero/.venv/bin/pip install spero
+#   cp policies/example.yaml /etc/spero/policy.yaml   # then edit it
+#   cp deploy/spero.service /etc/systemd/system/ && systemctl daemon-reload
+#   systemctl enable --now spero
+#
+# For the AI features, drop ANTHROPIC_API_KEY into /etc/spero/spero.env.
+
+[Unit]
+Description=Spero self-healing supervision agent
+Documentation=https://github.com/altikva/spero
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=spero
+Group=spero
+EnvironmentFile=-/etc/spero/spero.env
+Environment=SPERO_DATABASE_URL=sqlite:////var/lib/spero/spero.db
+ExecStart=/opt/spero/.venv/bin/spero watch --policy /etc/spero/policy.yaml
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/spero
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
