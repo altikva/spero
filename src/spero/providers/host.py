@@ -170,25 +170,38 @@ def _parse_port(raw: str) -> int:
     return port
 
 
-def parse_provider_spec(spec: str) -> tuple[str, SSHTarget | None]:
-    """Validate a policy provider string. Returns (kind, ssh_target | None).
+def parse_provider_spec(spec: str) -> tuple[str, object | None]:
+    """Validate a policy provider string. Returns (kind, detail).
 
     Pure and side-effect free so it can back a Pydantic validator -- bad provider
-    strings then fail at policy load, not mid-remediation.
+    strings then fail at policy load, not mid-remediation. ``detail`` is an
+    ``SSHTarget`` for ssh, a ``KubeTarget`` for k8s, or ``None`` for local.
     """
+    from spero.providers.kubernetes import parse_kube_dest
+
     if spec == "local":
         return "local", None
     if spec.startswith("ssh:"):
         return "ssh", parse_ssh_dest(spec[len("ssh:") :])
+    if spec == "k8s":
+        return "k8s", parse_kube_dest("")
+    if spec.startswith("k8s:"):
+        return "k8s", parse_kube_dest(spec[len("k8s:") :])
     raise ValueError(
-        f"unknown provider spec: {spec!r} (expected 'local' or 'ssh:[user@]host[:port]')"
+        f"unknown provider spec: {spec!r} "
+        "(expected 'local', 'ssh:[user@]host[:port]', or 'k8s:[context][/namespace]')"
     )
 
 
 def make_provider(spec: str, *, known_hosts: Any = _DEFAULT_KNOWN_HOSTS) -> Provider:
     """Resolve a policy provider string to a concrete Provider."""
-    kind, target = parse_provider_spec(spec)
+    from spero.providers.kubernetes import KubernetesProvider, KubeTarget
+
+    kind, detail = parse_provider_spec(spec)
     if kind == "local":
         return LocalProvider()
-    assert target is not None
-    return SSHProvider(target.host, user=target.user, port=target.port, known_hosts=known_hosts)
+    if kind == "ssh":
+        assert isinstance(detail, SSHTarget)
+        return SSHProvider(detail.host, user=detail.user, port=detail.port, known_hosts=known_hosts)
+    assert isinstance(detail, KubeTarget)
+    return KubernetesProvider(context=detail.context, namespace=detail.namespace)
