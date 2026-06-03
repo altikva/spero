@@ -10,12 +10,12 @@ from spero.providers.command import CommandResult
 
 
 class Provider(ABC):
-    """Executes commands against a target (a host, a pod, ...)."""
+    """Executes commands against a target (a host, a pod, ...). Async."""
 
     name: ClassVar[str] = ""
 
     @abstractmethod
-    def run(
+    async def run(
         self,
         command: str | Sequence[str],
         *,

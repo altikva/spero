@@ -25,5 +25,5 @@ class Probe(ABC):
     type: ClassVar[str] = ""
 
     @abstractmethod
-    def check(self, provider: Provider) -> ProbeResult:
+    async def check(self, provider: Provider) -> ProbeResult:
         raise NotImplementedError
