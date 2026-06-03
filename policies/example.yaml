@@ -1,0 +1,35 @@
+# Spero policy — declares what to supervise and how to heal it.
+# Replaces the old cluster_config.json. `frozen` is the global action freeze.
+version: 1
+frozen: false
+
+targets:
+  - name: nginx
+    provider: local
+    probe:
+      type: systemd
+      params:
+        unit: nginx.service
+      interval: 30
+    remediations:
+      - type: restart
+        params:
+          unit: nginx.service
+        # low-risk action runs automatically, high-risk needs a human (gated)
+        autonomy: gated
+        max_attempts: 2
+
+  - name: data-disk
+    provider: ssh:web-01
+    probe:
+      type: disk
+      params:
+        path: /data
+        threshold_pct: 90
+      interval: 300
+    remediations:
+      - type: rotate
+        params:
+          path: /data/logs
+          keep_days: 21
+        autonomy: auto

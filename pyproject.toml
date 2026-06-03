@@ -1,0 +1,91 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "spero"
+version = "0.0.1"
+description = "Self-healing supervision agent for Linux hosts and Kubernetes."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Joy Ndjama" }]
+keywords = ["supervision", "self-healing", "monitoring", "aiops", "sre", "kubernetes"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Monitoring",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "typer>=0.12",
+    "rich>=13.0",
+    "questionary>=2.0",
+    "watchdog>=4.0",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pyyaml>=6.0",
+    "cryptography>=42.0",
+    "apscheduler>=3.10",
+    "httpx>=0.27",
+    "paramiko>=3.4",
+]
+
+[project.optional-dependencies]
+# Phase 2 — Kubernetes provider
+k8s = ["kubernetes>=29.0"]
+# Phase 3 — AI layer: predictive, root-cause, NL interface
+ai = ["anthropic>=0.40", "rank-bm25>=0.2"]
+# Phase 3 — expose Spero to agents over MCP
+mcp = ["fastmcp>=2.0"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "coverage[toml]>=7.5",
+    "types-PyYAML",
+]
+
+[project.scripts]
+spero = "spero.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/altikva/spero"
+Repository = "https://github.com/altikva/spero"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/spero"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["spero"]
+branch = true
