@@ -90,8 +90,11 @@ class SSHProvider(Provider):
         result = CommandResult(returncode=-1, stdout="", stderr="", command=remote)
         for _attempt in range(retries + 1):
             try:
-                async with asyncssh.connect(self.host, **self._connect_kwargs()) as conn:
-                    completed = await asyncio.wait_for(conn.run(remote, check=False), timeout)
+                # Bound the WHOLE call (connect + run) by `timeout`; connect_timeout
+                # is only the floor for the TCP/handshake/auth phase. asyncssh.Error
+                # and TimeoutError both surface here; the async-with closes the
+                # connection on timeout via __aexit__ (verified leak-free).
+                completed = await asyncio.wait_for(self._exec(remote), timeout)
                 result = CommandResult(
                     completed.exit_status or 0,
                     _ssh_text(completed.stdout),
@@ -106,6 +109,10 @@ class SSHProvider(Provider):
             if result.ok:
                 break
         return result
+
+    async def _exec(self, remote: str) -> asyncssh.SSHCompletedProcess:
+        async with asyncssh.connect(self.host, **self._connect_kwargs()) as conn:
+            return await conn.run(remote, check=False)
 
 
 def _ssh_text(value: object) -> str:

@@ -34,7 +34,8 @@ def test_defaults_apply_for_minimal_policy() -> None:
               type: process
               params: {name: redis-server}
             remediations:
-              - type: restart
+              - type: respawn
+                params: {start: "/usr/bin/redis-server /etc/redis.conf"}
         """
     )
     target = p.targets[0]

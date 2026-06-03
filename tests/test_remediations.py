@@ -20,10 +20,11 @@ async def test_restart_service_sudo() -> None:
     assert provider.commands[0][0] == "sudo"
 
 
-async def test_respawn_with_user() -> None:
+async def test_respawn_with_user_uses_runuser_argv() -> None:
     provider = ScriptedProvider(fixed(0))
-    await RespawnProcess(start="/opt/app/start.sh", user="app").apply(provider)
-    assert provider.commands == [["su", "-", "app", "-c", "/opt/app/start.sh"]]
+    await RespawnProcess(start="/opt/app/start.sh --daemon", user="app").apply(provider)
+    # runuser + argv, never `su -c <string>` (no shell interpretation of policy params)
+    assert provider.commands == [["runuser", "-u", "app", "--", "/opt/app/start.sh", "--daemon"]]
 
 
 async def test_respawn_without_user_tokenizes() -> None:

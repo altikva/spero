@@ -78,10 +78,11 @@ class Engine:
         self._failures: dict[str, int] = {}
         self._open_alerts: set[str] = set()
         self._events: list[Event] = []
+        self._lock = asyncio.Lock()
 
     @property
     def events(self) -> list[Event]:
-        return self._events
+        return list(self._events)
 
     def failures(self, target: str) -> int:
         return self._failures.get(target, 0)
@@ -90,10 +91,25 @@ class Engine:
         self._events.append(Event(node=node, target=target, kind=kind, detail=detail))
 
     async def run_cycle(self) -> list[TargetOutcome]:
-        """Supervise every target once, concurrently."""
-        return list(await asyncio.gather(*(self._supervise(t) for t in self.policy.targets)))
+        """Supervise every target once, concurrently.
+
+        Serialized by a lock so overlapping callers (a scheduler plus a manual
+        trigger) can't double-count failures or double-fire remediations.
+        """
+        async with self._lock:
+            return list(await asyncio.gather(*(self._supervise(t) for t in self.policy.targets)))
 
     async def _supervise(self, target: TargetPolicy) -> TargetOutcome:
+        # One misbehaving target (a probe/remediation that *raises*) must never take
+        # down supervision of the others, so isolate every target here.
+        try:
+            return await self._supervise_inner(target)
+        except Exception as exc:
+            self._record(target.provider, target.name, "error", f"{type(exc).__name__}: {exc}")
+            failures = self._failures.get(target.name, 0)
+            return TargetOutcome(target.name, False, f"error: {exc}", failures)
+
+    async def _supervise_inner(self, target: TargetPolicy) -> TargetOutcome:
         provider = self.provider_factory(target.provider)
         probe = build_probe(target.probe)
         node = target.provider
@@ -123,17 +139,15 @@ class Engine:
         if not target.remediations:
             return None
 
+        # The list is the escalation ladder (validated non-decreasing max_attempts):
+        # the most-escalated eligible step is the LAST one whose threshold is reached.
         eligible = [s for s in target.remediations if n >= s.max_attempts]
         if not eligible:
-            nearest = min(target.remediations, key=lambda s: s.max_attempts)
+            nxt = target.remediations[0]
             return ActionOutcome(
-                nearest.type,
-                ActionStatus.waiting,
-                f"{n}/{nearest.max_attempts} failures before {nearest.type}",
+                nxt.type, ActionStatus.waiting, f"{n}/{nxt.max_attempts} failures before {nxt.type}"
             )
-
-        # The most-escalated remediation whose threshold the failure count has reached.
-        spec = max(eligible, key=lambda s: s.max_attempts)
+        spec = eligible[-1]
 
         if self.policy.frozen:
             self._record(node, target.name, "remediation", f"frozen: skipped {spec.type}")
@@ -149,8 +163,13 @@ class Engine:
 
         res = await build_remediation(spec).apply(provider)
         self._record(node, target.name, "remediation", f"{spec.type}: {res.detail}")
-        status = ActionStatus.applied if res.success else ActionStatus.failed
-        return ActionOutcome(spec.type, status, res.detail)
+        if res.success:
+            # Acted: clear the counter so we don't re-fire every cycle while the
+            # target takes time to come back. A genuinely still-broken target will
+            # re-accumulate failures and escalate again from the bottom of the ladder.
+            self._failures[target.name] = 0
+            return ActionOutcome(spec.type, ActionStatus.applied, res.detail)
+        return ActionOutcome(spec.type, ActionStatus.failed, res.detail)
 
     def persist(self, store_engine: object) -> None:
         """Flush collected events to the store, then clear them."""
@@ -160,6 +179,12 @@ class Engine:
 
         if not self._events or not isinstance(store_engine, SAEngine):
             return
-        with session_scope(store_engine) as session:
-            session.add_all(self._events)
-        self._events = []
+        # Swap the batch out first so a concurrent cycle's appends aren't lost or
+        # half-flushed; restore on failure so nothing is dropped silently.
+        batch, self._events = self._events, []
+        try:
+            with session_scope(store_engine) as session:
+                session.add_all(batch)
+        except Exception:
+            self._events = batch + self._events
+            raise

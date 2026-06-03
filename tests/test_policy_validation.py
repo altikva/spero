@@ -30,3 +30,47 @@ def test_valid_ssh_provider_accepted() -> None:
         """
     )
     assert p.targets[0].provider == "ssh:ops@web-01:2222"
+
+
+def test_unknown_probe_type_rejected_at_load() -> None:
+    with pytest.raises(ValidationError):
+        load_policy_str("targets:\n  - {name: x, probe: {type: nope}}")
+
+
+def test_bad_remediation_params_rejected_at_load() -> None:
+    # `restart` requires a `unit`; a typo'd/missing param must fail at load, not mid-heal.
+    with pytest.raises(ValidationError):
+        load_policy_str(
+            """
+            targets:
+              - name: web
+                probe: {type: systemd, params: {unit: nginx.service}}
+                remediations:
+                  - {type: restart, params: {untit: nginx.service}}
+            """
+        )
+
+
+def test_duplicate_target_names_rejected() -> None:
+    with pytest.raises(ValidationError, match="duplicate target names"):
+        load_policy_str(
+            """
+            targets:
+              - {name: web, probe: {type: systemd, params: {unit: a.service}}}
+              - {name: web, probe: {type: systemd, params: {unit: b.service}}}
+            """
+        )
+
+
+def test_decreasing_max_attempts_rejected() -> None:
+    with pytest.raises(ValidationError, match="non-decreasing"):
+        load_policy_str(
+            """
+            targets:
+              - name: web
+                probe: {type: systemd, params: {unit: nginx.service}}
+                remediations:
+                  - {type: restart, params: {unit: nginx.service}, max_attempts: 5}
+                  - {type: kill, params: {name: nginx}, max_attempts: 2}
+            """
+        )
