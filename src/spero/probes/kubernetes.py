@@ -19,6 +19,8 @@ class PodReadyProbe(Probe):
     type: ClassVar[str] = "pod"
 
     def __init__(self, selector: str, min_ready: int = 1) -> None:
+        if int(min_ready) < 1:
+            raise ValueError("min_ready must be >= 1")
         self.selector = selector
         self.min_ready = int(min_ready)
 
@@ -53,8 +55,9 @@ class DeploymentProbe(Probe):
             return ProbeResult(False, f"could not parse kubectl json: {exc}")
         desired = int(data.get("spec", {}).get("replicas", 0) or 0)
         available = int(data.get("status", {}).get("availableReplicas", 0) or 0)
-        healthy = desired > 0 and available >= desired
-        return ProbeResult(healthy, f"{self.name}: {available}/{desired} available")
+        if desired == 0:  # intentionally scaled to zero: nothing wanted, nothing missing
+            return ProbeResult(True, f"{self.name}: scaled to 0 (no replicas desired)")
+        return ProbeResult(available >= desired, f"{self.name}: {available}/{desired} available")
 
 
 def _pod_ready(pod: dict[str, object]) -> bool:

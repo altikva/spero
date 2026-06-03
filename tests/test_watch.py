@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from _fakes import ScriptedProvider, systemd_handler
 from spero.core.engine import Engine
@@ -34,11 +35,12 @@ async def test_build_scheduler_one_job_per_target_at_its_interval() -> None:
     assert jobs["db"].trigger.interval.total_seconds() == 60
 
 
-async def test_tick_supervises_and_persists() -> None:
-    # one probe failure -> engine records an event -> persisted to the store
+async def test_tick_supervises_and_persists(tmp_path: Path) -> None:
+    # one probe failure -> engine records an event -> persisted to the store.
+    # File-backed (not :memory:) because the async persist commits in a worker thread.
     provider = ScriptedProvider(systemd_handler(active=False))
     engine = _engine(provider)
-    store_engine = make_engine("sqlite://")
+    store_engine = make_engine(f"sqlite:///{tmp_path / 'spero.db'}")
     init_db(store_engine)
 
     outcomes: list[str] = []

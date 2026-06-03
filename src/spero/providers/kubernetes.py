@@ -63,6 +63,8 @@ class KubeTarget:
 
 
 def parse_kube_dest(rest: str) -> KubeTarget:
-    """Parse ``[context][/namespace]`` (the part after ``k8s:``)."""
+    """Parse ``[context][/namespace]`` (the part after ``k8s:``). Raises on garbage."""
     context, _, namespace = rest.partition("/")
+    if "/" in namespace:
+        raise ValueError(f"too many '/' in k8s spec: {rest!r} (expected [context][/namespace])")
     return KubeTarget(context=context or None, namespace=namespace or None)

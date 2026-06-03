@@ -8,13 +8,17 @@ The loop is just an asyncio event the caller sets to stop (SIGINT/SIGTERM in the
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
+from apscheduler.events import EVENT_JOB_ERROR, JobExecutionEvent
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from spero.core.engine import Engine, TargetOutcome
 from spero.core.models import Policy, TargetPolicy
+
+logger = logging.getLogger(__name__)
 
 OnOutcome = Callable[[TargetOutcome], Awaitable[None] | None] | None
 
@@ -27,7 +31,7 @@ async def _tick(
 ) -> None:
     outcome = await engine.supervise(target)
     if store_engine is not None:
-        engine.persist(store_engine)
+        await engine.persist(store_engine)
     if on_outcome is not None:
         result = on_outcome(outcome)
         if asyncio.iscoroutine(result):
@@ -42,10 +46,19 @@ def build_scheduler(
     on_outcome: OnOutcome = None,
     default_interval: int = 30,
 ) -> AsyncIOScheduler:
-    """One interval job per target, fired immediately then every probe interval."""
-    scheduler = AsyncIOScheduler()
-    for target in policy.targets:
+    """One interval job per target, started staggered then every probe interval."""
+    scheduler = AsyncIOScheduler(timezone=UTC)
+
+    def _on_error(event: JobExecutionEvent) -> None:
+        logger.error("watch job %s failed: %s", event.job_id, event.exception)
+
+    scheduler.add_listener(_on_error, EVENT_JOB_ERROR)
+
+    now = datetime.now(UTC)
+    for i, target in enumerate(policy.targets):
         interval = target.probe.interval or default_interval
+        # Stagger first runs so N targets don't all fire (and all persist) at once.
+        first = now + timedelta(seconds=min(i * 0.5, float(interval)))
         scheduler.add_job(
             _tick,
             "interval",
@@ -54,7 +67,8 @@ def build_scheduler(
             id=target.name,
             max_instances=1,
             coalesce=True,
-            next_run_time=datetime.now(),
+            misfire_grace_time=interval,
+            next_run_time=first,
         )
     return scheduler
 
@@ -74,4 +88,5 @@ async def watch(
     try:
         await stop.wait()
     finally:
-        scheduler.shutdown(wait=False)
+        if scheduler.running:
+            scheduler.shutdown(wait=False)

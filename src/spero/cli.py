@@ -83,12 +83,19 @@ def run(
     the configured model decide them.
     """
     p = load_policy(policy)
+    asyncio.run(_run_once(p, ai_approve=ai_approve, store=store))
+
+
+async def _run_once(policy_obj: object, *, ai_approve: bool, store: bool) -> None:
+    from spero.core.models import Policy
+
+    assert isinstance(policy_obj, Policy)
     approver = AIApprover(_llm()).approve if ai_approve else deny_all
-    engine = Engine(p, approver=approver)
-    outcomes = asyncio.run(engine.run_cycle())
+    engine = Engine(policy_obj, approver=approver)
+    outcomes = await engine.run_cycle()
     _render_outcomes(outcomes)
     if store:
-        engine.persist(_store_engine())
+        await engine.persist(_store_engine())
 
 
 @app.command()
@@ -120,8 +127,8 @@ async def _run_watch(policy_obj: object, *, ai_approve: bool, store: bool) -> No
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(sig, stop.set)
-        except NotImplementedError:  # e.g. Windows
-            pass
+        except NotImplementedError:  # e.g. Windows: fall back to a classic handler
+            signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop.set))
 
     mode = "agentic" if ai_approve else "human-gated"
     console.print(
@@ -192,6 +199,8 @@ def forecast(
     eta = forecast_threshold_crossing(samples, threshold)
     if eta is None:
         console.print(f"[dim]{target}: not trending toward {threshold}% (or too few samples)[/]")
+    elif eta == 0.0:
+        console.print(f"[red]{target}: already at/over {threshold}%[/] ({len(samples)} samples)")
     else:
         console.print(f"{target}: ~{eta / 3600:.1f}h until {threshold}% ({len(samples)} samples)")
 

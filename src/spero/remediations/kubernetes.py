@@ -47,6 +47,7 @@ class DeletePod(Remediation):
     """`kubectl delete pod -l <selector>` -- forceful; let the controller recreate."""
 
     type: ClassVar[str] = "delete-pod"
+    destructive: ClassVar[bool] = True
 
     def __init__(self, selector: str) -> None:
         self.selector = selector

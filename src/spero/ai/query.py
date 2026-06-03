@@ -21,7 +21,8 @@ def rank_events(question: str, docs: Sequence[str], k: int) -> list[str]:
     try:
         from rank_bm25 import BM25Okapi
     except ImportError:
-        return list(docs)[-k:]  # no ranker: fall back to most recent
+        # No ranker: keep the most recent. Callers pass newest-first, so that's the head.
+        return list(docs)[:k]
     tokenized = [d.lower().split() for d in docs]
     bm25 = BM25Okapi(tokenized)
     scores = bm25.get_scores(question.lower().split())

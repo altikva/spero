@@ -33,7 +33,17 @@ async def test_http_probe_wrong_status() -> None:
 async def test_http_probe_insecure_flag() -> None:
     provider = ScriptedProvider(fixed(0, "200"))
     await HttpProbe("https://x", insecure=True).check(provider)
-    assert "-k" in provider.commands[0]
+    cmd = provider.commands[0]
+    assert "-k" in cmd
+    assert "--" in cmd  # URL is separated from options so it can't become a flag
+
+
+def test_http_probe_rejects_non_http_url() -> None:
+    import pytest
+
+    for bad in ("file:///etc/passwd", "-O", "ftp://x"):
+        with pytest.raises(ValueError, match="http"):
+            HttpProbe(bad)
 
 
 async def test_command_probe_rc_and_contains() -> None:

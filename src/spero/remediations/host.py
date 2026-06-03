@@ -57,6 +57,7 @@ class KillProcess(Remediation):
     """`pkill -9` matching processes. Ports do_kill_processes; the forceful step."""
 
     type: ClassVar[str] = "kill"
+    destructive: ClassVar[bool] = True
 
     def __init__(self, name: str, user: str | None = None, signal: int = 9) -> None:
         self.pattern = name
@@ -81,6 +82,7 @@ class RotateLogs(Remediation):
     """
 
     type: ClassVar[str] = "rotate"
+    destructive: ClassVar[bool] = True
 
     def __init__(self, path: str, keep_days: int = 21) -> None:
         self.path = path

@@ -32,7 +32,8 @@ targets:
         params:
           path: /data/logs
           keep_days: 21
-        autonomy: auto
+        # destructive (deletes files): must be gated, never auto
+        autonomy: gated
 
   - name: postgres
     provider: ssh:ops@db-01

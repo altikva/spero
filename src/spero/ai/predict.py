@@ -23,6 +23,8 @@ def forecast_threshold_crossing(
     """
     if len(samples) < 2:
         return None
+    if samples[-1][1] >= threshold:  # already at or over the ceiling
+        return 0.0
     n = len(samples)
     sx = sum(t for t, _ in samples)
     sy = sum(v for _, v in samples)
