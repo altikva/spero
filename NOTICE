@@ -1,0 +1,8 @@
+Spero
+Copyright 2026 Altikva
+
+This product includes software developed at Altikva.
+
+Spero is a ground-up successor to an internal cluster-supervision tool. It is
+original work and does not vendor third-party source. Its runtime dependencies
+are listed in pyproject.toml and retain their own licenses.
