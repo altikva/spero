@@ -5,7 +5,7 @@ notices when they break, and heals them under policy-governed autonomy.
 Shipped under Altikva.
 """
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 __author__ = "Joy Ndjama"
 
 __all__ = ["__author__", "__version__"]
