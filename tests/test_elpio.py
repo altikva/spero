@@ -17,7 +17,7 @@ import pytest
 from _fakes import ScriptedProvider, fixed
 from spero.core.models import ProbeSpec
 from spero.probes import build_probe
-from spero.probes.elpio import ElpioServiceProbe
+from spero.probes.elpio import ElpioFunctionProbe, ElpioServiceProbe, ElpioTaskProbe
 
 
 def _svc(ready: str, *, revision: str | None = None, extra: list[dict] | None = None) -> str:
@@ -76,3 +76,79 @@ def test_registry_builds_from_policy() -> None:
 def test_bad_params_rejected() -> None:
     with pytest.raises(ValueError, match="bad params"):
         build_probe(ProbeSpec(type="elpio-service", params={"wrong": "x"}))
+
+
+# --- ElpioFunction ---
+
+
+def _fn(ready: str, *, service: str | None = None, extra: list[dict] | None = None) -> str:
+    conditions = [{"type": "Ready", "status": ready}]
+    if extra:
+        conditions += extra
+    status: dict = {"conditions": conditions}
+    if service:
+        status["serviceName"] = service
+    return json.dumps({"status": status})
+
+
+async def test_function_ready_names_service() -> None:
+    provider = ScriptedProvider(fixed(0, _fn("True", service="orders-svc")))
+    r = await ElpioFunctionProbe("orders-fn").check(provider)
+    assert r.healthy
+    assert "orders-svc" in r.detail
+    assert provider.commands == [["get", "elpiofunction", "orders-fn", "-o", "json"]]
+
+
+async def test_function_build_failure_surfaces_reason() -> None:
+    body = _fn(
+        "False",
+        extra=[{"type": "BuildReady", "status": "False", "reason": "TektonPipelineFailed"}],
+    )
+    r = await ElpioFunctionProbe("orders-fn").check(ScriptedProvider(fixed(0, body)))
+    assert not r.healthy
+    assert "BuildReady" in r.detail
+    assert "TektonPipelineFailed" in r.detail
+
+
+# --- ElpioTask ---
+
+
+def _task(ready: str, *, active: str = "False", queue: int | None = None) -> str:
+    status: dict = {
+        "conditions": [{"type": "Ready", "status": ready}, {"type": "Active", "status": active}]
+    }
+    if queue is not None:
+        status["queueLength"] = queue
+    return json.dumps({"status": status})
+
+
+async def test_task_active_reports_processing_and_backlog() -> None:
+    r = await ElpioTaskProbe("emails").check(
+        ScriptedProvider(fixed(0, _task("True", active="True", queue=42)))
+    )
+    assert r.healthy
+    assert "processing" in r.detail
+    assert "42 queued" in r.detail
+
+
+async def test_task_idle_is_healthy() -> None:
+    r = await ElpioTaskProbe("emails").check(
+        ScriptedProvider(fixed(0, _task("True", active="False")))
+    )
+    assert r.healthy
+    assert "idle" in r.detail
+
+
+async def test_task_not_ready_is_unhealthy() -> None:
+    r = await ElpioTaskProbe("emails").check(ScriptedProvider(fixed(0, _task("False"))))
+    assert not r.healthy
+    assert "not Ready" in r.detail
+
+
+def test_registry_builds_function_and_task() -> None:
+    assert isinstance(
+        build_probe(ProbeSpec(type="elpio-function", params={"name": "f"})), ElpioFunctionProbe
+    )
+    assert isinstance(
+        build_probe(ProbeSpec(type="elpio-task", params={"name": "t"})), ElpioTaskProbe
+    )
