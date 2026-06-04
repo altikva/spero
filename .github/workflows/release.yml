@@ -8,7 +8,7 @@ name: release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*.*.*"]
 
 permissions:
   contents: read
@@ -30,9 +30,9 @@ jobs:
             exit 1
           fi
       - name: Install uv
+        # No caching: this repo ships no uv.lock, and enabling the cache
+        # without a lockfile to key against errors out.
         uses: astral-sh/setup-uv@v8.2.0
-        with:
-          cache-dependency-glob: "pyproject.toml"
       - name: Lint, type-check, test
         run: |
           uv venv
@@ -48,9 +48,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install uv
+        # No caching: this repo ships no uv.lock, and enabling the cache
+        # without a lockfile to key against errors out.
         uses: astral-sh/setup-uv@v8.2.0
-        with:
-          cache-dependency-glob: "pyproject.toml"
       - name: Build sdist and wheel
         run: uv build
       - name: Check metadata

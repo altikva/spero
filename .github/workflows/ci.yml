@@ -9,18 +9,23 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
+    env:
+      # Route the matrix value through env so the run: block below never
+      # interpolates ${{ ... }} directly into the shell.
+      PYTHON_VERSION: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v5
       - name: Install uv
+        # No caching: this repo ships no uv.lock, and enabling the cache
+        # without a lockfile to key against errors out.
         uses: astral-sh/setup-uv@v8.2.0
-        with:
-          cache-dependency-glob: "pyproject.toml"
       - name: Install project
         run: |
-          uv venv --python ${{ matrix.python-version }}
-          uv pip install -e ".[dev]"
+          uv venv --python "$PYTHON_VERSION"
+          uv pip install -e ".[dev,ai,k8s,mcp]"
       - name: Lint
         run: uv run ruff check .
       - name: Format check
