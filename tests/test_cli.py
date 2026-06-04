@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typer.testing import CliRunner
 
+from spero import __version__
 from spero.cli import app
 
 runner = CliRunner()
@@ -25,6 +26,9 @@ def test_bare_invocation_shows_help_and_exits_zero() -> None:
     # CliRunner renders the prog name as "root"; the installed entry point is `spero`.
     assert "Usage:" in result.output
     assert "Commands" in result.output
+    # Branded landing screen: version/tagline line and the Examples panel.
+    assert __version__ in result.output
+    assert "Examples" in result.output
 
 
 def test_help_flag_exits_zero() -> None:
