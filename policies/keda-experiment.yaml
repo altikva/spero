@@ -1,0 +1,24 @@
+# EXPERIMENTAL policy for the a4c serverless-seam spike (docs/experiments/0001-keda-seam.md).
+# Supervises a KEDA ScaledObject and heals a paused one. This is the part of the a4c
+# serverless concern that DOES fit spero's four seams; provisioning the ScaledObject
+# in the first place does not (see the write-up).
+version: 1
+frozen: false
+
+targets:
+  - name: orders-api-autoscaler
+    provider: k8s:prod/orders
+    probe:
+      type: keda-scaledobject
+      params:
+        name: orders-api
+      interval: 30
+    remediations:
+      # A paused ScaledObject is a recoverable failure of an existing resource:
+      # clearing the pause annotations resumes autoscaling. Gated, not auto, so a
+      # human (or the AI approver) confirms before spero un-pauses a workload.
+      - type: keda-unpause
+        params:
+          name: orders-api
+        autonomy: gated
+        max_attempts: 2
