@@ -18,11 +18,16 @@ from spero.providers.base import Provider
 
 
 class KedaScaledObjectProbe(Probe):
-    """Healthy iff the KEDA ScaledObject ``name`` exists and its ``Ready`` condition is True.
+    """Healthy iff the KEDA ScaledObject ``name`` is ``Ready`` and not ``Paused``.
 
     Scaled-to-zero is healthy, mirroring DeploymentProbe: an idle serverless workload
     with ``Active=False`` but ``Ready=True`` is doing exactly what it should. The detail
     string reports the Active state so the operator can see idle vs serving.
+
+    A *paused* ScaledObject is unhealthy. Verified against live KEDA: pausing sets
+    ``Paused=True`` but leaves ``Ready=True``, so a Ready-only check would miss it and
+    the engine would never fire the unpause remediation. The autoscaler being frozen
+    is precisely the fault this probe pairs with UnpauseScaledObject to heal.
     """
 
     type: ClassVar[str] = "keda-scaledobject"
@@ -39,9 +44,11 @@ class KedaScaledObjectProbe(Probe):
         except json.JSONDecodeError as exc:
             return ProbeResult(False, f"could not parse kubectl json: {exc}")
         ready = _condition(conditions, "Ready")
-        active = _condition(conditions, "Active")
         if ready != "True":
             return ProbeResult(False, f"{self.name}: ScaledObject not Ready (Ready={ready})")
+        if _condition(conditions, "Paused") == "True":
+            return ProbeResult(False, f"{self.name}: autoscaling paused")
+        active = _condition(conditions, "Active")
         scale_state = "active" if active == "True" else "scaled-to-zero (idle)"
         return ProbeResult(True, f"{self.name}: Ready, {scale_state}")
 

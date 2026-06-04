@@ -18,13 +18,16 @@ from spero.remediations import build_remediation
 from spero.remediations.keda import UnpauseScaledObject
 
 
-def _scaledobject(ready: str, active: str) -> str:
+def _scaledobject(ready: str, active: str, paused: str = "False") -> str:
+    # Mirrors live KEDA: Ready/Active/Paused conditions (verified against KEDA on
+    # minikube -- pausing sets Paused=True but keeps Ready=True).
     return json.dumps(
         {
             "status": {
                 "conditions": [
                     {"type": "Ready", "status": ready},
                     {"type": "Active", "status": active},
+                    {"type": "Paused", "status": paused},
                 ]
             }
         }
@@ -46,6 +49,16 @@ async def test_ready_but_scaled_to_zero_is_healthy() -> None:
     )
     assert r.healthy
     assert "scaled-to-zero" in r.detail
+
+
+async def test_paused_is_unhealthy_even_when_ready() -> None:
+    # KEDA keeps Ready=True when paused; the probe must still flag it so the engine
+    # fires UnpauseScaledObject. Without this, a frozen autoscaler reads as healthy.
+    r = await KedaScaledObjectProbe("orders-api").check(
+        ScriptedProvider(fixed(0, _scaledobject("True", "True", paused="True")))
+    )
+    assert not r.healthy
+    assert "paused" in r.detail
 
 
 async def test_not_ready_is_unhealthy() -> None:
