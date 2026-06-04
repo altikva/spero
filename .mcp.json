@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "codegraph": {
+      "command": "cgh",
+      "args": [
+        "serve",
+        "--root",
+        ".",
+        "--watch",
+        "--reindex"
+      ]
+    }
+  }
+}
