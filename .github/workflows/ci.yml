@@ -14,7 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v8
+        with:
+          cache-dependency-glob: "pyproject.toml"
       - name: Install project
         run: |
           uv venv --python ${{ matrix.python-version }}
