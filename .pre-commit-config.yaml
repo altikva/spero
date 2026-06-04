@@ -1,7 +1,7 @@
 # Run on every commit: `uv run pre-commit install` once to wire the git hook.
 # `uv run pre-commit run --all-files` to check the whole tree on demand.
 repos:
-  # Secret scanning — keep credentials out of history (modeled on a4c-gke,
+  # Secret scanning — keep credentials out of history (modeled on elpio,
   # but the portable upstream hook rather than a vendored binary).
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2
