@@ -54,6 +54,7 @@ dev = [
     "mypy>=1.11",
     "coverage[toml]>=7.5",
     "types-PyYAML",
+    "pre-commit>=3.7",
 ]
 
 [project.scripts]
