@@ -30,12 +30,17 @@ re-architecting:
 Remediations carry an **autonomy** level — `suggest`, `gated`, or `auto` — so
 low-risk healing happens on its own while high-risk actions wait for a human.
 
+## Install
+
+```bash
+pip install spero            # or: uv pip install spero
+pip install "spero[ai]"      # add the Claude-backed AI layer
+pip install "spero[k8s]"     # add the Kubernetes provider deps
+```
+
 ## Quickstart
 
 ```bash
-uv venv && source .venv/bin/activate
-uv pip install -e ".[dev]"
-
 spero status                       # show targets from policies/example.yaml
 spero run                          # run one supervision cycle
 spero watch                        # supervise continuously (each target on its interval)
@@ -43,9 +48,19 @@ spero watch --ai-approve           # agentic: the model decides gated remediatio
 spero heal nginx                   # probe one target, walk its remediations interactively
 spero ask "what flapped today?"    # natural-language query over the event history
 spero serve                        # run the control-plane API on :8800
+```
+
+## From source
+
+```bash
+git clone https://github.com/altikva/spero && cd spero
+uv venv && source .venv/bin/activate
+uv pip install -e ".[dev]"
 pytest                             # run the suite
 ```
 
 ## License
 
-[Apache-2.0](./LICENSE).
+Spero is released under the **ALTIKVA Dual License v1.0**: your choice of the
+[MIT License](./LICENSE) or [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+See [LICENSE](./LICENSE).
