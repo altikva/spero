@@ -21,7 +21,7 @@ from spero.probes.datainfra import (
     TrinoProbe,
 )
 from spero.probes.host import DiskProbe, PortProbe, ProcessProbe, SystemdProbe
-from spero.probes.keda import KedaScaledObjectProbe  # EXPERIMENTAL: a4c serverless seam spike
+from spero.probes.keda import KedaScaledObjectProbe  # EXPERIMENTAL: elpio serverless seam spike
 from spero.probes.kubernetes import DeploymentProbe, PodReadyProbe
 
 PROBES: dict[str, type[Probe]] = {

@@ -4,13 +4,13 @@
 # __copyright__ = "Copyright 2026 ALTIKVA."
 # __licence__ = "MIT & CC BY-NC-SA (https://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-# Description: KEDA ScaledObject probe -- the supervision half of the a4c serverless seam
+# Description: KEDA ScaledObject probe -- the supervision half of the elpio serverless seam
 #              experiment.
 
-"""KEDA ScaledObject probe -- the supervision half of the a4c serverless seam experiment.
+"""KEDA ScaledObject probe -- the supervision half of the elpio serverless seam experiment.
 
 EXPERIMENTAL (see docs/experiments/0001-keda-seam.md). This exists to test one
-question from the spero<->a4c council: can spero's four-seam shape express a KEDA
+question from the spero<->elpio council: can spero's four-seam shape express a KEDA
 (serverless autoscaling) concern? Supervising a ScaledObject's health maps cleanly
 onto the Probe seam -- it's a ``kubectl get`` + read, exactly like DeploymentProbe.
 The provisioning half (creating the ScaledObject) is where the seam strains; that
