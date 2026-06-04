@@ -1,0 +1,19 @@
+# EXPERIMENTAL: spero supervises pod resource usage against declared requests.
+# Probe-only rightsizing SIGNAL: spero flags pods running hot vs their requests;
+# applying a new request (or a VPA recommendation) is a future remediation gated by
+# autonomy -- spero governs the change, it does not reimplement an autoscaler.
+# Needs metrics-server in the cluster.
+version: 1
+frozen: false
+
+targets:
+  - name: orders-api-usage
+    provider: k8s:/orders
+    probe:
+      type: resource-usage
+      params:
+        selector: app=orders-api
+        cpu_threshold_pct: 85
+        mem_threshold_pct: 85
+      interval: 60
+    remediations: []  # supervision only; rightsizing action is a future gated remediation
