@@ -61,6 +61,6 @@ pytest                             # run the suite
 
 ## License
 
-Spero is released under the **ALTIKVA Dual License v1.0**: your choice of the
-[MIT License](./LICENSE) or [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
-See [LICENSE](./LICENSE).
+Spero is released under the **ALTIKVA Dual License v1.0**
+([MIT](./LICENSE) and [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)),
+SPDX `MIT AND CC-BY-NC-SA-4.0`. See [LICENSE](./LICENSE).
