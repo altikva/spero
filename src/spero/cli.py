@@ -43,6 +43,9 @@ from spero.store import Event, init_db, make_engine, recent_events
 
 app = typer.Typer(add_completion=False, help="Spero - self-healing supervision agent.")
 console = Console()
+# Banner header goes to stderr so stdout stays clean for piping/parsing
+# (e.g. `spero version`, table/JSON output), while still showing in a terminal.
+err_console = Console(stderr=True)
 
 # figlet "Standard" font, matching cgh's banner style. Static so it adds no dependency.
 _BANNER = r"""
@@ -65,17 +68,19 @@ _EXAMPLES = (
 
 @app.callback(invoke_without_command=True)
 def _root(ctx: typer.Context) -> None:
-    # Bare `spero` greets with a branded landing screen and exits 0 (like `cgh`),
-    # not Typer's default "Missing command" usage error. A subcommand bypasses this.
-    if ctx.invoked_subcommand is None:
-        console.print(_BANNER, style="bold cyan")
-        console.print(
-            f"  [bold]v{__version__}[/]  ---  "
-            "Self-healing supervision agent for Linux and Kubernetes\n"
-        )
-        typer.echo(ctx.get_help())
-        console.print(Panel(_EXAMPLES, title="Examples", border_style="dim", expand=False))
-        raise typer.Exit()
+    # Every invocation gets the banner as a header (like `cgh`). Bare `spero` then
+    # greets with the full landing screen and exits 0, rather than Typer's default
+    # "Missing command" usage error.
+    if ctx.invoked_subcommand is not None:
+        err_console.print(_BANNER, style="bold cyan")  # header before the subcommand's output
+        return
+    console.print(_BANNER, style="bold cyan")
+    console.print(
+        f"  [bold]v{__version__}[/]  ---  Self-healing supervision agent for Linux and Kubernetes\n"
+    )
+    typer.echo(ctx.get_help())
+    console.print(Panel(_EXAMPLES, title="Examples", border_style="dim", expand=False))
+    raise typer.Exit()
 
 
 _STATUS_STYLE = {
