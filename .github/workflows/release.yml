@@ -1,8 +1,10 @@
 name: release
 
-# Tag a release (e.g. `git tag v0.1.0 && git push --tags`) to build and publish
-# to PyPI via Trusted Publishing (OIDC) -- no API token stored in the repo.
-# Configure the publisher once at https://pypi.org/manage/project/spero/settings/publishing/
+# Tag a release (`git tag v0.1.0 && git push origin v0.1.0`) to validate, build,
+# and publish to PyPI via Trusted Publishing (OIDC) -- no API token in the repo.
+# One-time setup: add a pending publisher at
+# https://pypi.org/manage/account/publishing/ (owner altikva, repo spero,
+# workflow release.yml, environment pypi).
 
 on:
   push:
@@ -12,17 +14,49 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - name: Tag must match the package version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          tag="${REF_NAME#v}"
+          pkg="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
+          echo "tag=$tag package=$pkg"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match pyproject version $pkg"
+            exit 1
+          fi
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v5
+      - name: Lint, type-check, test
+        run: |
+          uv venv
+          uv pip install -e ".[dev]"
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy
+          uv run pytest
+
+  build:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
       - name: Build sdist and wheel
         run: uv build
       - name: Check metadata
         run: uvx twine check dist/*
-      - uses: actions/upload-artifact@v4
+      - name: Smoke-test the built wheel
+        run: |
+          uv venv /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          /tmp/smoke/bin/spero version
+      - uses: actions/upload-artifact@v5
         with:
           name: dist
           path: dist/
@@ -32,11 +66,17 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write # required for Trusted Publishing
+      id-token: write # Trusted Publishing
+      contents: write # create the GitHub Release
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: dist
           path: dist/
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
+        run: gh release create "$REF_NAME" dist/* --title "$REF_NAME" --generate-notes

@@ -24,3 +24,13 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+/.claude/
+git-flow-plus.config
+/CLAUDE.md
+
+# codegraph index
+.codegraph/
+
+# codegraph auth key (never commit)
+.codegraph/auth.key
+
