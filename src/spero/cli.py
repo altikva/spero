@@ -43,6 +43,16 @@ from spero.store import Event, init_db, make_engine, recent_events
 app = typer.Typer(add_completion=False, help="Spero - self-healing supervision agent.")
 console = Console()
 
+
+@app.callback(invoke_without_command=True)
+def _root(ctx: typer.Context) -> None:
+    # Bare `spero` should greet with help and exit 0 (like `cgh`), not raise a
+    # "Missing command" usage error. A real subcommand bypasses this.
+    if ctx.invoked_subcommand is None:
+        typer.echo(ctx.get_help())
+        raise typer.Exit()
+
+
 _STATUS_STYLE = {
     ActionStatus.applied: "green",
     ActionStatus.failed: "red",
