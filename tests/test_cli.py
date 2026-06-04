@@ -50,3 +50,39 @@ def test_subcommand_prints_banner_header_on_stderr() -> None:
     assert result.exit_code == 0
     assert result.stdout.strip() == f"spero {__version__}"
     assert "|___/" in result.stderr  # the ascii banner went to stderr
+
+
+def test_top_dashboard_render() -> None:
+    # The `spero top` live dashboard renders the target grid + event feed off pure
+    # data (no loop, no live terminal), so it is testable directly.
+    from rich.console import Console
+
+    from spero.cli import _render_top
+    from spero.core.engine import ActionOutcome, ActionStatus, TargetOutcome
+    from spero.core.models import Policy, ProbeSpec, TargetPolicy
+    from spero.store.models import Event
+
+    policy = Policy(
+        targets=[
+            TargetPolicy(
+                name="nginx",
+                provider="local",
+                probe=ProbeSpec(type="systemd", params={"unit": "nginx.service"}),
+            )
+        ]
+    )
+    outcomes = [
+        TargetOutcome(
+            "nginx", False, "inactive", 2, ActionOutcome("restart", ActionStatus.applied, "ok")
+        )
+    ]
+    events = [Event(node="local", target="nginx", kind="probe_fail", detail="[2] inactive")]
+
+    console = Console(width=120)
+    with console.capture() as cap:
+        console.print(_render_top(policy, outcomes, events))
+    out = cap.get()
+    assert "spero top" in out
+    assert "nginx" in out
+    assert "restart:applied" in out
+    assert "recent events" in out
