@@ -46,14 +46,6 @@ spero serve                        # run the control-plane API on :8800
 pytest                             # run the suite
 ```
 
-## Roadmap
-
-- **Phase 0 — Foundations** *(done)*: Py3, FastAPI, policy model, host command layer, store, CI.
-- **Phase 1 — Host self-healing** *(done)*: async providers, host probes + remediations, the supervision engine, alerting.
-- **Phase 2 — Kubernetes** *(done)*: a `k8s` provider (kubectl) with pod/deployment probes and rollout-restart / scale / delete-pod remediations.
-- **Phase 3 — AI** *(done)*: predictive (disk-fill forecast, flapping), LLM root-cause + incident summaries, NL ops queries (`spero ask`), and agentic remediation (`spero run --ai-approve`). Claude-backed, works without a key via a fallback.
-- **Phase 4 — Data infra** *(done)*: composable `http` + `command` probes and named adapters (`postgres`, `kafka`, `trino`, `clickhouse`), healed by the existing restart / rollout-restart remediations.
-
 ## License
 
 [Apache-2.0](./LICENSE).
