@@ -41,3 +41,12 @@ def test_version_subcommand_still_runs() -> None:
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
     assert "spero" in result.output.lower()
+
+
+def test_subcommand_prints_banner_header_on_stderr() -> None:
+    # Every command gets the banner header (like cgh), but on stderr -- so stdout
+    # stays clean and parseable (`spero version` prints just the version string).
+    result = runner.invoke(app, ["version"])
+    assert result.exit_code == 0
+    assert result.stdout.strip() == f"spero {__version__}"
+    assert "|___/" in result.stderr  # the ascii banner went to stderr
