@@ -8,9 +8,15 @@
 # Description: Project README: what Spero is, its concepts, quickstart, and roadmap.
 -->
 
-# Spero
+```
+ ___ _ __   ___ _ __ ___
+/ __| '_ \ / _ \ '__/ _ \
+\__ \ |_) |  __/ | | (_) |
+|___/ .__/ \___|_|  \___/
+    |_|
+```
 
-Self-healing supervision agent for Linux hosts and Kubernetes.
+**Self-healing supervision agent for Linux hosts and Kubernetes.**
 
 Spero watches the things you run — processes, services, disks, workloads — notices
 when they break, and heals them under policy-governed autonomy. It sits between a
