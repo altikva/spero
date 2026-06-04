@@ -4,6 +4,7 @@
 # __copyright__ = "Copyright 2026 ALTIKVA."
 # __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# Description: Remediations: WHAT Spero does to heal a target, plus a registry to build from policy.
 
 """Remediations: WHAT Spero does to heal a target, plus a registry to build from policy."""
 

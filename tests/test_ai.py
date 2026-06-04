@@ -4,6 +4,7 @@
 # __copyright__ = "Copyright 2026 ALTIKVA."
 # __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# Description: Tests for the AI layer: predictive (pure), and the LLM-backed pieces via a fake.
 
 """Tests for the AI layer: predictive (pure), and the LLM-backed pieces via a fake."""
 

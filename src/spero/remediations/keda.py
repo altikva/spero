@@ -4,6 +4,8 @@
 # __copyright__ = "Copyright 2026 ALTIKVA."
 # __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# Description: KEDA ScaledObject remediation -- the healing half of the a4c serverless seam
+#              experiment.
 
 """KEDA ScaledObject remediation -- the healing half of the a4c serverless seam experiment.
 

@@ -4,6 +4,7 @@
 # __copyright__ = "Copyright 2026 ALTIKVA."
 # __licence__ = "MIT & CC BY-NC-SA (http://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# Description: SMTP email alerter. Ports send_mail_from_server, modernized to EmailMessage.
 
 """SMTP email alerter. Ports send_mail_from_server, modernized to EmailMessage.
 
