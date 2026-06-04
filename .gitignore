@@ -37,3 +37,5 @@ git-flow-plus.config
 # codegraph auth key (never commit)
 .codegraph/auth.key
 
+# uv writes a lockfile on every `uv run`; spero intentionally doesn't pin one
+uv.lock
