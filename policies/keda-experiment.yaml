@@ -1,5 +1,5 @@
-# EXPERIMENTAL policy for the a4c serverless-seam spike (docs/experiments/0001-keda-seam.md).
-# Supervises a KEDA ScaledObject and heals a paused one. This is the part of the a4c
+# EXPERIMENTAL policy for the elpio serverless-seam spike (docs/experiments/0001-keda-seam.md).
+# Supervises a KEDA ScaledObject and heals a paused one. This is the part of the elpio
 # serverless concern that DOES fit spero's four seams; provisioning the ScaledObject
 # in the first place does not (see the write-up).
 version: 1
