@@ -14,3 +14,21 @@ targets:
         name: orders
       interval: 30
     remediations: []  # supervision only; healing the CRD is elpio's operator's job
+
+  - name: thumbnailer-function
+    provider: k8s:prod/orders
+    probe:
+      type: elpio-function
+      params:
+        name: thumbnailer
+      interval: 60
+    remediations: []
+
+  - name: email-task
+    provider: k8s:prod/orders
+    probe:
+      type: elpio-task
+      params:
+        name: email-dispatch
+      interval: 30
+    remediations: []
