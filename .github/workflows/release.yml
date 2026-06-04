@@ -30,7 +30,9 @@ jobs:
             exit 1
           fi
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v8
+        with:
+          cache-dependency-glob: "pyproject.toml"
       - name: Lint, type-check, test
         run: |
           uv venv
@@ -46,7 +48,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v8
+        with:
+          cache-dependency-glob: "pyproject.toml"
       - name: Build sdist and wheel
         run: uv build
       - name: Check metadata
