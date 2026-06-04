@@ -36,3 +36,4 @@ git-flow-plus.config
 
 # codegraph auth key (never commit)
 .codegraph/auth.key
+/docs/
