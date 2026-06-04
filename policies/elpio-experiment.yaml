@@ -1,0 +1,16 @@
+# EXPERIMENTAL policy: spero supervises an elpio ElpioService (day-2 layer, council option c).
+# Probe-only on purpose. Spero watches the service's Ready state and alerts; provisioning
+# and reconciling the ElpioService stay with elpio's operator, per experiment 0001's verdict
+# (spero supervises what exists, elpio's operator makes desired state exist).
+version: 1
+frozen: false
+
+targets:
+  - name: orders-service
+    provider: k8s:prod/orders
+    probe:
+      type: elpio-service
+      params:
+        name: orders
+      interval: 30
+    remediations: []  # supervision only; healing the CRD is elpio's operator's job
