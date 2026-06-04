@@ -20,6 +20,9 @@ htmlcov/
 *.sqlite3
 .env
 
+# Internal planning doc, not shipped
+docs/PORT_MAP.md
+
 # OS / IDE
 .DS_Store
 .idea/
