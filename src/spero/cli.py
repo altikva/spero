@@ -18,6 +18,7 @@ import os
 import questionary
 import typer
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 from sqlalchemy import Engine as SAEngine
 
@@ -43,13 +44,37 @@ from spero.store import Event, init_db, make_engine, recent_events
 app = typer.Typer(add_completion=False, help="Spero - self-healing supervision agent.")
 console = Console()
 
+# figlet "Standard" font, matching cgh's banner style. Static so it adds no dependency.
+_BANNER = r"""
+ ___ _ __   ___ _ __ ___
+/ __| '_ \ / _ \ '__/ _ \
+\__ \ |_) |  __/ | | (_) |
+|___/ .__/ \___|_|  \___/
+    |_|
+"""
+
+_EXAMPLES = (
+    "[cyan]spero status[/]                 show targets from the active policy\n"
+    "[cyan]spero run[/]                    run one supervision cycle\n"
+    "[cyan]spero watch[/]                  supervise continuously until Ctrl-C\n"
+    "[cyan]spero heal[/] nginx             probe a target, walk its remediations\n"
+    '[cyan]spero ask[/] "what flapped?"    natural-language query over events\n'
+    "[cyan]spero serve[/]                  run the control-plane API on :8800"
+)
+
 
 @app.callback(invoke_without_command=True)
 def _root(ctx: typer.Context) -> None:
-    # Bare `spero` should greet with help and exit 0 (like `cgh`), not raise a
-    # "Missing command" usage error. A real subcommand bypasses this.
+    # Bare `spero` greets with a branded landing screen and exits 0 (like `cgh`),
+    # not Typer's default "Missing command" usage error. A subcommand bypasses this.
     if ctx.invoked_subcommand is None:
+        console.print(_BANNER, style="bold cyan")
+        console.print(
+            f"  [bold]v{__version__}[/]  ---  "
+            "Self-healing supervision agent for Linux and Kubernetes\n"
+        )
         typer.echo(ctx.get_help())
+        console.print(Panel(_EXAMPLES, title="Examples", border_style="dim", expand=False))
         raise typer.Exit()
 
 
