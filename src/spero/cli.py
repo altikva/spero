@@ -17,7 +17,7 @@ import os
 
 import questionary
 import typer
-from rich.console import Console
+from rich.console import Console, Group, RenderableType
 from rich.panel import Panel
 from rich.table import Table
 from sqlalchemy import Engine as SAEngine
@@ -210,6 +210,97 @@ def _now() -> str:
     from datetime import datetime
 
     return datetime.now().strftime("%H:%M:%S")
+
+
+@app.command()
+def top(
+    policy: str = typer.Option(settings.policy_path, help="Path to the policy file."),
+    interval: float = typer.Option(5.0, help="Seconds between refreshes."),
+    store: bool = typer.Option(False, help="Persist events to the store while watching."),
+) -> None:
+    """Live dashboard: supervise on a timer and render a k9s-style target grid (Ctrl-C to quit)."""
+    p = load_policy(policy)
+    asyncio.run(_run_top(p, interval=interval, store=store))
+
+
+def _render_top(policy_obj: object, outcomes: list[TargetOutcome], events: list[Event]) -> Group:
+    from spero.core.models import Policy
+
+    assert isinstance(policy_obj, Policy)
+    frozen = " [yellow](action freeze ON)[/]" if policy_obj.frozen else ""
+    header = Panel(
+        f"[bold cyan]spero top[/]  {len(policy_obj.targets)} target(s){frozen}"
+        f"  [dim]{_now()}  -  Ctrl-C to quit[/]",
+        border_style="cyan",
+    )
+
+    table = Table(expand=True)
+    table.add_column("Target", style="bold")
+    table.add_column("Provider")
+    table.add_column("Probe")
+    table.add_column("Health")
+    table.add_column("Fails", justify="right")
+    table.add_column("Action")
+    table.add_column("Detail", overflow="fold")
+    by_name = {o.target: o for o in outcomes}
+    for t in policy_obj.targets:
+        o = by_name.get(t.name)
+        if o is None:  # first paint, before the first cycle returns
+            table.add_row(t.name, t.provider, t.probe.type, "[dim]...[/]", "", "", "")
+            continue
+        health = "[green]healthy[/]" if o.healthy else "[red]DOWN[/]"
+        action = ""
+        if o.action is not None:
+            style = _STATUS_STYLE.get(o.action.status, "white")
+            action = f"[{style}]{o.action.remediation}:{o.action.status.value}[/]"
+        fails = str(o.failures) if o.failures else ""
+        table.add_row(t.name, t.provider, t.probe.type, health, fails, action, o.detail)
+
+    feed = (
+        "\n".join(
+            f"[dim]{e.target}[/] [{_event_style(e.kind)}]{e.kind}[/] {e.detail}"
+            for e in events[-12:]
+        )
+        or "[dim]no events yet[/]"
+    )
+    return Group(header, table, Panel(feed, title="recent events", border_style="dim"))
+
+
+def _event_style(kind: str) -> str:
+    return {"probe_fail": "red", "remediation": "yellow", "error": "red", "info": "green"}.get(
+        kind, "dim"
+    )
+
+
+async def _run_top(policy_obj: object, *, interval: float, store: bool) -> None:
+    import contextlib
+    import signal
+
+    from rich.live import Live
+
+    from spero.core.models import Policy
+
+    assert isinstance(policy_obj, Policy)
+    engine = Engine(policy_obj)
+    store_engine = _store_engine() if store else None
+
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:  # e.g. Windows
+            signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop.set))
+
+    initial: RenderableType = _render_top(policy_obj, [], [])
+    with Live(initial, console=console, screen=True, auto_refresh=False) as live:
+        while not stop.is_set():
+            outcomes = await engine.run_cycle()
+            if store_engine is not None:
+                await engine.persist(store_engine)
+            live.update(_render_top(policy_obj, outcomes, engine.events), refresh=True)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(stop.wait(), timeout=interval)
 
 
 @app.command()
