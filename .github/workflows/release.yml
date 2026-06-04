@@ -30,17 +30,16 @@ jobs:
             exit 1
           fi
       - name: Install uv
-        # No caching: this repo ships no uv.lock, and enabling the cache
-        # without a lockfile to key against errors out.
         uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
       - name: Lint, type-check, test
         run: |
-          uv venv
-          uv pip install -e ".[dev]"
-          uv run ruff check .
-          uv run ruff format --check .
-          uv run mypy
-          uv run pytest
+          uv sync --locked --all-extras
+          uv run --no-sync ruff check .
+          uv run --no-sync ruff format --check .
+          uv run --no-sync mypy
+          uv run --no-sync pytest
 
   build:
     needs: validate
@@ -48,8 +47,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install uv
-        # No caching: this repo ships no uv.lock, and enabling the cache
-        # without a lockfile to key against errors out.
         uses: astral-sh/setup-uv@v8.2.0
       - name: Build sdist and wheel
         run: uv build

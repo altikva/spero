@@ -17,6 +17,7 @@ repos:
       - id: check-toml
       - id: check-merge-conflict
       - id: check-added-large-files
+        args: ["--maxkb=2048"] # uv.lock is legitimately large (~700KB)
 
   # Lint + format via the project's own pinned ruff (uv run), so the hook can
   # never disagree with CI or the version in pyproject.toml.

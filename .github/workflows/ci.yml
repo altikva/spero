@@ -6,6 +6,9 @@ on:
   pull_request:
 
 jobs:
+  # Gating job: reproducible install from the committed uv.lock. --locked fails
+  # the build if the lock is stale vs pyproject, so a green run proves the lock
+  # is honest. The lockfile also gives setup-uv a stable cache key.
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -19,18 +22,37 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install uv
-        # No caching: this repo ships no uv.lock, and enabling the cache
-        # without a lockfile to key against errors out.
         uses: astral-sh/setup-uv@v8.2.0
-      - name: Install project
-        run: |
-          uv venv --python "$PYTHON_VERSION"
-          uv pip install -e ".[dev,ai,k8s,mcp]"
+        with:
+          enable-cache: true
+      - name: Install from lockfile
+        run: uv sync --locked --all-extras --python "$PYTHON_VERSION"
       - name: Lint
-        run: uv run ruff check .
+        run: uv run --no-sync ruff check .
       - name: Format check
-        run: uv run ruff format --check .
+        run: uv run --no-sync ruff format --check .
       - name: Type check
-        run: uv run mypy
+        run: uv run --no-sync mypy
       - name: Test
-        run: uv run pytest
+        run: uv run --no-sync pytest
+
+  # Non-gating early-warning job: ignore the lock and resolve the newest deps
+  # allowed by the pyproject floors. Catches "an upstream release broke us"
+  # across the matrix without blocking PRs on 2am transitive breakage.
+  test-latest:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    env:
+      PYTHON_VERSION: ${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+      - name: Install newest deps within floors
+        run: uv sync --upgrade --all-extras --python "$PYTHON_VERSION"
+      - name: Test
+        run: uv run --no-sync pytest
