@@ -77,7 +77,11 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
       - name: GitHub Release
+        # This job has no checkout, so gh can't infer the repo from local git
+        # (the v0.1.0 run failed here with "not a git repository"). Pass --repo
+        # explicitly so gh talks to the API directly.
         env:
           GH_TOKEN: ${{ github.token }}
           REF_NAME: ${{ github.ref_name }}
-        run: gh release create "$REF_NAME" dist/* --title "$REF_NAME" --generate-notes
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$REF_NAME" dist/* --repo "$GH_REPO" --title "$REF_NAME" --generate-notes
