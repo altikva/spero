@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
 
 import questionary
 import typer
@@ -223,14 +226,26 @@ def top(
     asyncio.run(_run_top(p, interval=interval, store=store))
 
 
-def _render_top(policy_obj: object, outcomes: list[TargetOutcome], events: list[Event]) -> Group:
+_TOP_KEYS = (
+    "[bold]q[/] quit   [bold]p[/] pause   [bold]r[/] refresh   "
+    "[bold]a[/] approve gated   [bold]f[/] toggle freeze"
+)
+
+
+def _render_top(
+    policy_obj: object,
+    outcomes: list[TargetOutcome],
+    events: list[Event],
+    paused: bool = False,
+) -> Group:
     from spero.core.models import Policy
 
     assert isinstance(policy_obj, Policy)
     frozen = " [yellow](action freeze ON)[/]" if policy_obj.frozen else ""
+    pause_tag = " [yellow](paused)[/]" if paused else ""
     header = Panel(
-        f"[bold cyan]spero top[/]  {len(policy_obj.targets)} target(s){frozen}"
-        f"  [dim]{_now()}  -  Ctrl-C to quit[/]",
+        f"[bold cyan]spero top[/]  {len(policy_obj.targets)} target(s){frozen}{pause_tag}"
+        f"  [dim]{_now()}[/]\n{_TOP_KEYS}",
         border_style="cyan",
     )
 
@@ -272,8 +287,50 @@ def _event_style(kind: str) -> str:
     )
 
 
+@dataclass
+class _TopState:
+    """Mutable dashboard state driven by single-key commands."""
+
+    paused: bool = False
+    quit: bool = False
+    approved: set[str] = field(default_factory=set)
+    outcomes: list[TargetOutcome] = field(default_factory=list)
+
+
+def _handle_key(key: str, state: _TopState, policy_obj: object) -> None:
+    """Apply one keypress to the dashboard state (pure; no terminal/engine I/O)."""
+    from spero.core.models import Policy
+
+    assert isinstance(policy_obj, Policy)
+    key = key.lower()
+    if key == "q":
+        state.quit = True
+    elif key == "p":
+        state.paused = not state.paused
+    elif key == "f":
+        policy_obj.frozen = not policy_obj.frozen
+    elif key == "a":
+        # Approve every target currently awaiting approval; the approver consults this
+        # set on the next cycle, so the gated remediation fires then.
+        state.approved |= {
+            o.target
+            for o in state.outcomes
+            if o.action is not None and o.action.status is ActionStatus.awaiting_approval
+        }
+
+
+async def _wait_first(events: list[asyncio.Event], timeout: float | None) -> None:
+    """Return when any event fires or the timeout elapses, cancelling the rest."""
+    tasks = [asyncio.ensure_future(e.wait()) for e in events]
+    try:
+        await asyncio.wait(tasks, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 async def _run_top(policy_obj: object, *, interval: float, store: bool) -> None:
-    import contextlib
     import signal
 
     from rich.live import Live
@@ -281,10 +338,16 @@ async def _run_top(policy_obj: object, *, interval: float, store: bool) -> None:
     from spero.core.models import Policy
 
     assert isinstance(policy_obj, Policy)
-    engine = Engine(policy_obj)
+    state = _TopState()
     store_engine = _store_engine() if store else None
 
+    async def _approve(target: TargetPolicy, spec: RemediationSpec) -> bool:
+        return target.name in state.approved
+
+    engine = Engine(policy_obj, approver=_approve)
+
     stop = asyncio.Event()
+    wake = asyncio.Event()  # any keypress wakes the loop so the UI reacts promptly
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
@@ -292,15 +355,76 @@ async def _run_top(policy_obj: object, *, interval: float, store: bool) -> None:
         except NotImplementedError:  # e.g. Windows
             signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop.set))
 
-    initial: RenderableType = _render_top(policy_obj, [], [])
-    with Live(initial, console=console, screen=True, auto_refresh=False) as live:
-        while not stop.is_set():
-            outcomes = await engine.run_cycle()
-            if store_engine is not None:
-                await engine.persist(store_engine)
-            live.update(_render_top(policy_obj, outcomes, engine.events), refresh=True)
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(stop.wait(), timeout=interval)
+    def _dispatch(ch: str) -> None:
+        _handle_key(ch, state, policy_obj)
+        wake.set()
+
+    fd = _start_keyreader(loop, _dispatch)
+    try:
+        initial: RenderableType = _render_top(policy_obj, [], [])
+        with Live(initial, console=console, screen=True, auto_refresh=False) as live:
+            while not state.quit and not stop.is_set():
+                if not state.paused:
+                    state.outcomes = await engine.run_cycle()
+                    # One-shot approvals: forget targets whose action just applied.
+                    state.approved -= {
+                        o.target
+                        for o in state.outcomes
+                        if o.action is not None and o.action.status is ActionStatus.applied
+                    }
+                    if store_engine is not None:
+                        await engine.persist(store_engine)
+                live.update(
+                    _render_top(policy_obj, state.outcomes, engine.events, state.paused),
+                    refresh=True,
+                )
+                wake.clear()
+                await _wait_first([stop, wake], timeout=None if state.paused else interval)
+    finally:
+        _stop_keyreader(loop, fd)
+
+
+def _start_keyreader(loop: asyncio.AbstractEventLoop, on_key: Callable[[str], None]) -> int | None:
+    """Put stdin in cbreak mode and dispatch single keys to ``on_key``. Returns the fd.
+
+    Returns None when stdin is not a TTY (piped / CI): the dashboard still auto-refreshes
+    and Ctrl-C still quits, there is just nothing to read keys from.
+    """
+    import sys
+
+    if not sys.stdin.isatty():
+        return None
+    import termios
+    import tty
+
+    fd = sys.stdin.fileno()
+    _KEYREADER_STATE[fd] = termios.tcgetattr(fd)
+    tty.setcbreak(fd)  # leaves ISIG on, so Ctrl-C still raises SIGINT
+
+    def _readable() -> None:
+        try:
+            data = os.read(fd, 1)
+        except OSError:
+            return
+        if data:
+            on_key(data.decode(errors="ignore"))
+
+    loop.add_reader(fd, _readable)
+    return fd
+
+
+def _stop_keyreader(loop: asyncio.AbstractEventLoop, fd: int | None) -> None:
+    if fd is None:
+        return
+    import termios
+
+    loop.remove_reader(fd)
+    old = _KEYREADER_STATE.pop(fd, None)
+    if old is not None:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+_KEYREADER_STATE: dict[int, Any] = {}
 
 
 @app.command()
