@@ -86,3 +86,52 @@ def test_top_dashboard_render() -> None:
     assert "nginx" in out
     assert "restart:applied" in out
     assert "recent events" in out
+
+
+def test_top_key_handler() -> None:
+    # Pure single-key dispatch for `spero top`: pause, freeze, approve, quit.
+    from spero.cli import _handle_key, _TopState
+    from spero.core.engine import ActionOutcome, ActionStatus, TargetOutcome
+    from spero.core.models import Policy, ProbeSpec, TargetPolicy
+
+    policy = Policy(
+        targets=[
+            TargetPolicy(
+                name="nginx",
+                provider="local",
+                probe=ProbeSpec(type="systemd", params={"unit": "nginx.service"}),
+            )
+        ]
+    )
+    state = _TopState()
+
+    _handle_key("p", state, policy)
+    assert state.paused is True
+    _handle_key("p", state, policy)
+    assert state.paused is False
+
+    assert policy.frozen is False
+    _handle_key("f", state, policy)
+    assert policy.frozen is True
+
+    # 'a' approves only targets currently awaiting approval
+    state.outcomes = [
+        TargetOutcome(
+            "nginx", False, "down", 2, ActionOutcome("restart", ActionStatus.applied, "")
+        ),
+    ]
+    _handle_key("a", state, policy)
+    assert state.approved == set()  # applied != awaiting_approval
+
+    state.outcomes = [
+        TargetOutcome(
+            "nginx", False, "down", 2, ActionOutcome("restart", ActionStatus.awaiting_approval, "")
+        ),
+    ]
+    _handle_key("a", state, policy)
+    assert "nginx" in state.approved
+
+    _handle_key("q", state, policy)
+    assert state.quit is True
+
+    _handle_key("z", state, policy)  # unknown key is a no-op
