@@ -221,9 +221,18 @@ def top(
     interval: float = typer.Option(5.0, help="Seconds between refreshes."),
     store: bool = typer.Option(False, help="Persist events to the store while watching."),
 ) -> None:
-    """Live dashboard: supervise on a timer and render a k9s-style target grid (Ctrl-C to quit)."""
+    """Live dashboard: supervise on a timer and render a k9s-style target grid (Ctrl-C to quit).
+
+    Uses the Textual UI (mouse, row selection, scrollback) when the ``tui`` extra is
+    installed; otherwise falls back to a rich.Live dashboard so the command always works.
+    """
     p = load_policy(policy)
-    asyncio.run(_run_top(p, interval=interval, store=store))
+    try:
+        from spero.tui import run_top_app
+    except ImportError:
+        asyncio.run(_run_top(p, interval=interval, store=store))  # rich.Live fallback
+        return
+    run_top_app(p, interval=interval, store=store)
 
 
 _TOP_KEYS = (
