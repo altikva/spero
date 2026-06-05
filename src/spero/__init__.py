@@ -13,7 +13,12 @@ notices when they break, and heals them under policy-governed autonomy.
 Shipped under Altikva.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("spero")  # single source of truth: the installed package version
+except PackageNotFoundError:  # running from a source tree that was never installed
+    __version__ = "0.0.0+unknown"
 __author__ = "Joy Ndjama"
 
 __all__ = ["__author__", "__version__"]
