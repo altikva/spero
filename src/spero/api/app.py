@@ -14,6 +14,10 @@ and testable. Phase 1 adds the resource routers (nodes, events, targets, heal).
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
+
 import yaml
 from fastapi import FastAPI, HTTPException
 from pydantic import ValidationError
@@ -23,18 +27,52 @@ from spero.config import Settings
 from spero.config import settings as default_settings
 from spero.core.policy import load_policy
 
+if TYPE_CHECKING:
+    from spero.api.supervisor import Supervisor
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+
+def create_app(settings: Settings | None = None, supervisor: Supervisor | None = None) -> FastAPI:
+    """Build the control-plane app.
+
+    With a ``supervisor`` attached (what ``spero serve`` does), the app drives the
+    supervision loop in the background and serves its live state at /status and
+    /events. Without one, those endpoints return 503 (the plain `uvicorn
+    spero.api.app:app` import target is a static policy view only).
+    """
     settings = settings or default_settings
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if supervisor is not None:
+            await supervisor.start()
+        try:
+            yield
+        finally:
+            if supervisor is not None:
+                await supervisor.stop()
+
     app = FastAPI(
         title="Spero",
         version=__version__,
         summary="Self-healing supervision agent for Linux hosts and Kubernetes.",
+        lifespan=lifespan,
     )
 
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
+
+    @app.get("/status")
+    def status() -> dict[str, object]:
+        if supervisor is None:
+            raise HTTPException(503, "not supervising; run `spero serve`")
+        return supervisor.status()
+
+    @app.get("/events")
+    def events(limit: int = 50) -> dict[str, object]:
+        if supervisor is None:
+            raise HTTPException(503, "not supervising; run `spero serve`")
+        return {"events": supervisor.events(limit)}
 
     @app.get("/targets")
     def targets() -> dict[str, object]:
