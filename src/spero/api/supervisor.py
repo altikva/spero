@@ -95,6 +95,15 @@ class Supervisor:
             "action": _action_dict(o),
         }
 
+    async def object_yaml(self, name: str) -> str:
+        """YAML of the object the named target supervises. Raises KeyError if unknown."""
+        from spero.core.inspect import object_yaml
+
+        target = next((t for t in self.policy.targets if t.name == name), None)
+        if target is None:
+            raise KeyError(name)
+        return await object_yaml(target)
+
     def events(self, limit: int = 50) -> list[dict[str, str]]:
         """Recent events, newest last. From the store if persisting, else in-memory."""
         from sqlalchemy import Engine as SAEngine
