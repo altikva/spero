@@ -49,3 +49,44 @@ async def test_app_mounts_and_keys_work() -> None:
         assert app.paused is True
 
         await pilot.press("q")
+
+
+async def test_remote_app_renders_from_fake_api() -> None:
+    # SperoRemoteApp polls /status + /events; stub its httpx client so no network.
+    import httpx
+
+    from spero.tui import SperoRemoteApp
+
+    status = {
+        "frozen": False,
+        "targets": [
+            {
+                "target": "orders",
+                "provider": "k8s:/orders",
+                "probe": "deployment",
+                "healthy": True,
+                "failures": 0,
+                "detail": "1/1 available",
+                "action": None,
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/status":
+            return httpx.Response(200, json=status)
+        return httpx.Response(200, json={"events": []})
+
+    app = SperoRemoteApp("http://test", interval=999)
+    async with app.run_test() as pilot:
+        # Replace the real client with one backed by the in-memory handler.
+        app._client = httpx.AsyncClient(
+            base_url="http://test", transport=httpx.MockTransport(handler)
+        )
+        await app._poll()
+        await pilot.pause()
+        table = app.query_one("#targets")
+        assert table.row_count == 1
+        await pilot.press("p")
+        assert app.paused is True
+        await pilot.press("q")

@@ -231,7 +231,13 @@ def top(
     selection, scrollback) when the ``tui`` extra is installed, else a rich.Live fallback.
     """
     if remote:
-        asyncio.run(_run_top_remote(remote.rstrip("/"), interval=interval))
+        url = remote.rstrip("/")
+        try:
+            from spero.tui import run_remote_app
+        except ImportError:
+            asyncio.run(_run_top_remote(url, interval=interval))  # rich.Live fallback
+            return
+        run_remote_app(url, interval=interval)
         return
     p = load_policy(policy)
     try:
@@ -356,14 +362,20 @@ def _render_remote(status: dict, events: list[dict]) -> Group:
 
 
 async def _run_top_remote(url: str, *, interval: float) -> None:
-    """Poll a remote spero's control plane and render its live state (Ctrl-C to quit)."""
-    import contextlib
+    """Poll a remote spero's control plane and render its live state.
+
+    The rich.Live fallback for when the `tui` extra is absent. Keys: q quit, r
+    refresh now, p pause. (With the `tui` extra, `top --remote` uses the Textual
+    app instead, which adds mouse and scrollback.)
+    """
     import signal
 
     import httpx
     from rich.live import Live
 
     stop = asyncio.Event()
+    wake = asyncio.Event()
+    paused = {"on": False}  # boxed so the key handler can mutate it
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
@@ -371,20 +383,37 @@ async def _run_top_remote(url: str, *, interval: float) -> None:
         except NotImplementedError:  # e.g. Windows
             signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop.set))
 
-    async with httpx.AsyncClient(base_url=url, timeout=5.0) as client:
-        with Live(
-            Panel(f"connecting to {url} ..."), console=console, screen=True, auto_refresh=False
-        ) as live:
-            while not stop.is_set():
-                try:
-                    status = (await client.get("/status")).raise_for_status().json()
-                    body = (await client.get("/events")).raise_for_status().json()
-                    renderable: RenderableType = _render_remote(status, body.get("events", []))
-                except Exception as exc:
-                    renderable = Panel(f"[red]cannot reach {url}[/]\n{exc}", border_style="red")
-                live.update(renderable, refresh=True)
-                with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(stop.wait(), timeout=interval)
+    def _on_key(ch: str) -> None:
+        c = ch.lower()
+        if c == "q":
+            stop.set()
+        elif c == "p":
+            paused["on"] = not paused["on"]
+        wake.set()  # r (or any key) wakes the loop to repaint/refetch
+
+    fd = _start_keyreader(loop, _on_key)
+    try:
+        async with httpx.AsyncClient(base_url=url, timeout=5.0) as client:
+            with Live(
+                Panel(f"connecting to {url} ..."), console=console, screen=True, auto_refresh=False
+            ) as live:
+                while not stop.is_set():
+                    if not paused["on"]:
+                        try:
+                            status = (await client.get("/status")).raise_for_status().json()
+                            body = (await client.get("/events")).raise_for_status().json()
+                            renderable: RenderableType = _render_remote(
+                                status, body.get("events", [])
+                            )
+                        except Exception as exc:
+                            renderable = Panel(
+                                f"[red]cannot reach {url}[/]\n{exc}", border_style="red"
+                            )
+                        live.update(renderable, refresh=True)
+                    wake.clear()
+                    await _wait_first([stop, wake], timeout=interval)
+    finally:
+        _stop_keyreader(loop, fd)
 
 
 @dataclass
