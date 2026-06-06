@@ -1,0 +1,16 @@
+# EXPERIMENTAL policy: spero supervises a Knative Service (serving.knative.dev).
+# Probe-only on purpose. Spero watches the service's Ready state and alerts; provisioning
+# and reconciling the Knative Service stay with whoever owns its desired state (its operator
+# or GitOps), per the day-2 split (spero supervises what exists, the owner makes it exist).
+version: 1
+frozen: false
+
+targets:
+  - name: web-service
+    provider: k8s:prod/web
+    probe:
+      type: knative-service
+      params:
+        name: web
+      interval: 30
+    remediations: []  # supervision only; healing the Service is its operator's job
