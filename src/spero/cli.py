@@ -672,6 +672,41 @@ def serve(
     uvicorn.run(create_app(supervisor=sup), host=host, port=port)
 
 
+@app.command()
+def owner(
+    host: str = typer.Option(settings.host, help="Bind address."),
+    port: int = typer.Option(settings.port, help="Bind port."),
+) -> None:
+    """Run the fleet owner: agents dial home, report status, and pull orders.
+
+    Approve a gated remediation with:
+    `curl -X POST http://host:port/agents/<id>/approve -d '{"target":"<name>"}'`
+    """
+    import uvicorn
+
+    from spero.owner import create_owner_app
+
+    uvicorn.run(create_owner_app(), host=host, port=port)
+
+
+@app.command()
+def agent(
+    owner: str = typer.Option(..., help="Owner URL to dial home to (http://host:port)."),
+    policy: str = typer.Option(settings.policy_path, help="Path to the policy file."),
+    agent_id: str = typer.Option("agent-1", "--id", help="Agent identifier reported to the owner."),
+    interval: float = typer.Option(10.0, help="Seconds between reports."),
+) -> None:
+    """Supervise locally and dial home to a remote owner.
+
+    Gated remediations wait for the owner's approval (a RemoteApprover in the engine's
+    approver slot); `auto` actions still run unattended even if the owner is offline.
+    """
+    from spero.agent import run_agent
+
+    p = load_policy(policy)
+    asyncio.run(run_agent(p, owner_url=owner.rstrip("/"), agent_id=agent_id, interval=interval))
+
+
 def _llm() -> LLMClient:
     """Use Claude when a key and the optional dep are present, else the no-op model."""
     if os.environ.get("ANTHROPIC_API_KEY"):
