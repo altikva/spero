@@ -64,6 +64,26 @@ Kubernetes provider shells out to `kubectl` at runtime (it does not use a python
 client). It runs as a non-root user (uid 65532) with a read-only root
 filesystem.
 
+## Observe a running worker
+
+The Deployment runs `spero serve`, which supervises the cluster AND exposes its
+live state over HTTP on port 8800: `/status` (per-target health and the last
+action) and `/events` (recent probe and remediation events). It serves store-less,
+so nothing is written under the read-only root filesystem.
+
+Watch it from your laptop by port-forwarding to the pod, then pointing a local
+spero at it:
+
+```
+kubectl -n spero-system port-forward deploy/spero 8800:8800
+spero top --remote http://localhost:8800
+```
+
+`spero top --remote` polls those endpoints and renders the same dashboard, so you
+see what the in-cluster worker is supervising without running any probes yourself.
+This is the pull-based read model; the dial-home design below is the push-based
+version where the worker reaches out to a remote owner.
+
 ## Dial-home design
 
 Spero runs as a plain always-on Deployment, not a Knative scale-to-zero service.
