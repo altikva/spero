@@ -220,12 +220,19 @@ def top(
     policy: str = typer.Option(settings.policy_path, help="Path to the policy file."),
     interval: float = typer.Option(5.0, help="Seconds between refreshes."),
     store: bool = typer.Option(False, help="Persist events to the store while watching."),
+    remote: str = typer.Option(
+        "", help="Observe a remote spero (http://host:port) instead of supervising locally."
+    ),
 ) -> None:
     """Live dashboard: supervise on a timer and render a k9s-style target grid (Ctrl-C to quit).
 
-    Uses the Textual UI (mouse, row selection, scrollback) when the ``tui`` extra is
-    installed; otherwise falls back to a rich.Live dashboard so the command always works.
+    With --remote, poll another spero's /status and /events (its `spero serve`) and
+    render those instead of probing locally. Otherwise uses the Textual UI (mouse,
+    selection, scrollback) when the ``tui`` extra is installed, else a rich.Live fallback.
     """
+    if remote:
+        asyncio.run(_run_top_remote(remote.rstrip("/"), interval=interval))
+        return
     p = load_policy(policy)
     try:
         from spero.tui import run_top_app
@@ -294,6 +301,90 @@ def _event_style(kind: str) -> str:
     return {"probe_fail": "red", "remediation": "yellow", "error": "red", "info": "green"}.get(
         kind, "dim"
     )
+
+
+def _render_remote(status: dict, events: list[dict]) -> Group:
+    """Render the dashboard from a remote spero's /status + /events JSON."""
+    targets = status.get("targets") or []
+    frozen = " [yellow](action freeze ON)[/]" if status.get("frozen") else ""
+    header = Panel(
+        f"[bold cyan]spero top[/] [dim]remote[/]  {len(targets)} target(s){frozen}"
+        f"  [dim]{_now()}[/]",
+        border_style="cyan",
+    )
+    table = Table(expand=True)
+    table.add_column("Target", style="bold")
+    table.add_column("Provider")
+    table.add_column("Probe")
+    table.add_column("Health")
+    table.add_column("Fails", justify="right")
+    table.add_column("Action")
+    table.add_column("Detail", overflow="fold")
+    for t in targets:
+        healthy = t.get("healthy")
+        if healthy is None:
+            health = "[dim]...[/]"
+        else:
+            health = "[green]healthy[/]" if healthy else "[red]DOWN[/]"
+        action = ""
+        a = t.get("action")
+        if a:
+            try:
+                style = _STATUS_STYLE.get(ActionStatus(a["status"]), "white")
+            except ValueError:
+                style = "white"
+            action = f"[{style}]{a['remediation']}:{a['status']}[/]"
+        fails = str(t.get("failures") or "") if t.get("failures") else ""
+        table.add_row(
+            str(t.get("target", "")),
+            str(t.get("provider", "")),
+            str(t.get("probe", "")),
+            health,
+            fails,
+            action,
+            str(t.get("detail", "")),
+        )
+    feed = (
+        "\n".join(
+            f"[dim]{e.get('target', '')}[/] "
+            f"[{_event_style(e.get('kind', ''))}]{e.get('kind', '')}[/] {e.get('detail', '')}"
+            for e in events[-12:]
+        )
+        or "[dim]no events[/]"
+    )
+    return Group(header, table, Panel(feed, title="recent events", border_style="dim"))
+
+
+async def _run_top_remote(url: str, *, interval: float) -> None:
+    """Poll a remote spero's control plane and render its live state (Ctrl-C to quit)."""
+    import contextlib
+    import signal
+
+    import httpx
+    from rich.live import Live
+
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:  # e.g. Windows
+            signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop.set))
+
+    async with httpx.AsyncClient(base_url=url, timeout=5.0) as client:
+        with Live(
+            Panel(f"connecting to {url} ..."), console=console, screen=True, auto_refresh=False
+        ) as live:
+            while not stop.is_set():
+                try:
+                    status = (await client.get("/status")).raise_for_status().json()
+                    body = (await client.get("/events")).raise_for_status().json()
+                    renderable: RenderableType = _render_remote(status, body.get("events", []))
+                except Exception as exc:
+                    renderable = Panel(f"[red]cannot reach {url}[/]\n{exc}", border_style="red")
+                live.update(renderable, refresh=True)
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(stop.wait(), timeout=interval)
 
 
 @dataclass
@@ -531,11 +622,25 @@ async def _approve(tp: TargetPolicy, spec: RemediationSpec, *, assume_yes: bool)
 def serve(
     host: str = typer.Option(settings.host, help="Bind address."),
     port: int = typer.Option(settings.port, help="Bind port."),
+    policy: str = typer.Option(settings.policy_path, help="Path to the policy file."),
+    supervise: bool = typer.Option(
+        True, help="Drive the supervision loop and serve live /status and /events."
+    ),
 ) -> None:
-    """Run the control-plane API."""
+    """Run the control-plane API (supervises and serves live status by default).
+
+    Observe it from elsewhere with `spero top --remote http://host:port`.
+    """
     import uvicorn
 
-    uvicorn.run("spero.api.app:app", host=host, port=port)
+    from spero.api.app import create_app
+
+    sup = None
+    if supervise:
+        from spero.api.supervisor import Supervisor
+
+        sup = Supervisor(load_policy(policy))  # store-less: events stay in memory
+    uvicorn.run(create_app(supervisor=sup), host=host, port=port)
 
 
 def _llm() -> LLMClient:
