@@ -41,3 +41,36 @@ def test_targets_missing_policy_returns_503() -> None:
     r = TestClient(bad_app).get("/targets")
     assert r.status_code == 503
     assert "not found" in r.json()["detail"]
+
+
+def test_status_and_events_503_without_supervisor() -> None:
+    # The plain app (no supervisor) is a static policy view; live endpoints 503.
+    assert client.get("/status").status_code == 503
+    assert client.get("/events").status_code == 503
+
+
+def test_status_and_events_with_supervisor() -> None:
+    from spero.api.supervisor import Supervisor
+    from spero.core.models import Policy, ProbeSpec, TargetPolicy
+
+    pol = Policy(
+        targets=[
+            TargetPolicy(
+                name="nginx",
+                provider="local",
+                probe=ProbeSpec(type="systemd", params={"unit": "nginx.service"}),
+            )
+        ]
+    )
+    # No `with`: lifespan (and the background watch loop) does not start, so this is
+    # a deterministic read of the live endpoints with no probing.
+    api = TestClient(create_app(supervisor=Supervisor(pol)))
+    s = api.get("/status")
+    assert s.status_code == 200
+    body = s.json()
+    assert body["frozen"] is False
+    assert body["targets"][0]["target"] == "nginx"
+    assert body["targets"][0]["healthy"] is None  # not probed yet
+    e = api.get("/events")
+    assert e.status_code == 200
+    assert e.json() == {"events": []}
