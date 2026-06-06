@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spero-system
+  labels:
+    app.kubernetes.io/name: spero
+    app.kubernetes.io/part-of: spero

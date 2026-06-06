@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spero
+  namespace: spero-system
+  labels:
+    app.kubernetes.io/name: spero
+    app.kubernetes.io/part-of: spero
+    app.kubernetes.io/component: supervisor
+spec:
+  # Always-on supervisor: exactly one replica. Not a Knative scale-to-zero
+  # service. Leader election (acting overlay) guards against accidental scaleup.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: spero
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: spero
+        app.kubernetes.io/part-of: spero
+        app.kubernetes.io/component: supervisor
+    spec:
+      serviceAccountName: spero
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: spero
+          image: ghcr.io/altikva/spero:0.2.0
+          args: ["watch", "--policy", "/etc/spero/policy.yaml"]
+          env:
+            # Where the agent dials OUT to. The owner can never reach inbound.
+            - name: SPERO_OWNER_URL
+              value: "https://owner.example.com"
+            - name: SPERO_AGENT_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: policy
+              mountPath: /etc/spero
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: policy
+          configMap:
+            name: spero-policy
+        # Writable scratch so readOnlyRootFilesystem stays true (kubectl cache,
+        # any temp the agent writes).
+        - name: tmp
+          emptyDir: {}
