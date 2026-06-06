@@ -32,7 +32,20 @@ spec:
       containers:
         - name: spero
           image: ghcr.io/altikva/spero:0.2.0
-          args: ["watch", "--policy", "/etc/spero/policy.yaml"]
+          # serve supervises AND exposes live /status + /events (store-less, so it
+          # writes nothing under the read-only rootfs). Observe it from outside with
+          # `kubectl -n spero-system port-forward deploy/spero 8800:8800`
+          # then `spero top --remote http://localhost:8800`.
+          args: ["serve", "--host", "0.0.0.0", "--policy", "/etc/spero/policy.yaml"]
+          ports:
+            - name: http
+              containerPort: 8800
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
           env:
             # Where the agent dials OUT to. The owner can never reach inbound.
             - name: SPERO_OWNER_URL

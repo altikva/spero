@@ -135,3 +135,39 @@ def test_top_key_handler() -> None:
     assert state.quit is True
 
     _handle_key("z", state, policy)  # unknown key is a no-op
+
+
+def test_render_remote_from_json() -> None:
+    # `spero top --remote` renders purely from the /status + /events JSON.
+    from rich.console import Console
+
+    from spero.cli import _render_remote
+
+    status = {
+        "frozen": True,
+        "targets": [
+            {
+                "target": "orders",
+                "provider": "k8s:/orders",
+                "probe": "keda-scaledobject",
+                "healthy": False,
+                "failures": 3,
+                "detail": "autoscaling paused",
+                "action": {
+                    "remediation": "keda-unpause",
+                    "status": "awaiting_approval",
+                    "detail": "",
+                },
+            }
+        ],
+    }
+    events = [{"target": "orders", "kind": "probe_fail", "detail": "autoscaling paused"}]
+    console = Console(width=120)
+    with console.capture() as cap:
+        console.print(_render_remote(status, events))
+    out = cap.get()
+    assert "remote" in out
+    assert "orders" in out
+    assert "DOWN" in out
+    assert "keda-unpause:awaiting_approval" in out
+    assert "action freeze ON" in out
