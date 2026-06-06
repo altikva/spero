@@ -33,10 +33,21 @@ if TYPE_CHECKING:
     import httpx
 
 _DASH_CSS = """
+#banner { height: auto; color: $accent; padding: 0 1; }
 #status { height: 1; padding: 0 1; }
 #targets { height: 2fr; }
 #events { height: 1fr; border: round $panel-darken-1; padding: 0 1; }
 """
+
+# figlet "Standard" spero banner, shown at the top of the dashboard (the stderr
+# header is hidden once Textual takes the alternate screen).
+_BANNER = (
+    " ___ _ __   ___ _ __ ___\n"
+    "/ __| '_ \\ / _ \\ '__/ _ \\\n"
+    "\\__ \\ |_) |  __/ | | (_) |\n"
+    "|___/ .__/ \\___|_|  \\___/\n"
+    "    |_|"
+)
 
 _STATUS_STYLE = {
     ActionStatus.applied: "green",
@@ -53,11 +64,7 @@ class SperoTopApp(App[None]):
     """Live supervision dashboard with selection, mouse, and scrollback."""
 
     TITLE = "spero top"
-    CSS = """
-    #status { height: 1; padding: 0 1; }
-    #targets { height: 2fr; }
-    #events { height: 1fr; border: round $panel-darken-1; padding: 0 1; }
-    """
+    CSS = _DASH_CSS
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("q", "quit", "quit"),
         Binding("p", "pause", "pause"),
@@ -82,6 +89,7 @@ class SperoTopApp(App[None]):
         return target.name in self.approved
 
     def compose(self) -> ComposeResult:
+        yield Static(_BANNER, id="banner")
         yield Static(id="status")
         yield DataTable(id="targets", cursor_type="row", zebra_stripes=True)
         yield RichLog(id="events", markup=True, highlight=False, wrap=True)
@@ -218,6 +226,7 @@ class SperoRemoteApp(App[None]):
         self._rows: set[str] = set()
 
     def compose(self) -> ComposeResult:
+        yield Static(_BANNER, id="banner")
         yield Static(id="status")
         yield DataTable(id="targets", cursor_type="row", zebra_stripes=True)
         yield RichLog(id="events", markup=True, highlight=False, wrap=True)
