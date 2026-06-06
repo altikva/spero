@@ -65,6 +65,8 @@ class SperoTopApp(App[None]):
 
     TITLE = "spero top"
     CSS = _DASH_CSS
+    # Show "ctrl+p palette" in the footer instead of the cryptic "^p" (clearer on macOS).
+    COMMAND_PALETTE_DISPLAY = "ctrl+p"
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("q", "quit", "quit"),
         Binding("p", "pause", "pause"),
@@ -99,7 +101,18 @@ class SperoTopApp(App[None]):
         table = self.query_one("#targets", DataTable)
         self._cols = table.add_columns(*_COLUMNS)
         for t in self.policy.targets:
-            table.add_row(t.name, t.provider, t.probe.type, "...", "", "", "", key=t.name)
+            # Literal Text cells so the auto-highlighter does not underline path/url
+            # tokens (e.g. k8s:/orders) as if they were links.
+            table.add_row(
+                Text(t.name),
+                Text(t.provider),
+                Text(t.probe.type),
+                Text("..."),
+                Text(""),
+                Text(""),
+                Text(""),
+                key=t.name,
+            )
         self._update_status()
         self.set_interval(self.interval, self._tick)
         self._tick()  # first cycle immediately
@@ -129,9 +142,9 @@ class SperoTopApp(App[None]):
             else:
                 action = Text("")
             table.update_cell(o.target, self._cols[3], health)
-            table.update_cell(o.target, self._cols[4], str(o.failures) if o.failures else "")
+            table.update_cell(o.target, self._cols[4], Text(str(o.failures) if o.failures else ""))
             table.update_cell(o.target, self._cols[5], action)
-            table.update_cell(o.target, self._cols[6], o.detail)
+            table.update_cell(o.target, self._cols[6], Text(o.detail))
 
         self._drain_events()
         self._update_status()
@@ -210,6 +223,7 @@ class SperoRemoteApp(App[None]):
 
     TITLE = "spero top (remote)"
     CSS = _DASH_CSS
+    COMMAND_PALETTE_DISPLAY = "ctrl+p"
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("q", "quit", "quit"),
         Binding("r", "refresh", "refresh"),
@@ -278,14 +292,15 @@ class SperoRemoteApp(App[None]):
             else:
                 action = Text("")
             fails = str(t.get("failures") or "") if t.get("failures") else ""
+            # Literal Text so the auto-highlighter does not underline path/url tokens.
             cells = [
-                name,
-                str(t.get("provider", "")),
-                str(t.get("probe", "")),
+                Text(name),
+                Text(str(t.get("provider", ""))),
+                Text(str(t.get("probe", ""))),
                 health,
-                fails,
+                Text(fails),
                 action,
-                str(t.get("detail", "")),
+                Text(str(t.get("detail", ""))),
             ]
             if name in self._rows:
                 for col, val in zip(self._cols, cells, strict=True):
