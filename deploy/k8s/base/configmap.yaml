@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spero-policy
+  namespace: spero-system
+  labels:
+    app.kubernetes.io/name: spero
+    app.kubernetes.io/part-of: spero
+data:
+  policy.yaml: |
+    # Sample in-cluster policy. Replace targets with your own workloads.
+    # The k8s provider shells out to kubectl using the pod's ServiceAccount,
+    # so the namespace after "k8s:" is the namespace kubectl queries.
+    version: 1
+    frozen: false
+
+    targets:
+      - name: api-deployment
+        provider: k8s:default
+        probe:
+          type: deployment
+          params:
+            name: api
+          interval: 30
+        remediations:
+          # Gentle first (rollout restart), then recreate pods if it persists.
+          # Both gated: a human, or the remote owner acting as approver, confirms.
+          - type: rollout-restart
+            params:
+              deployment: api
+            autonomy: gated
+            max_attempts: 2
+          - type: delete-pod
+            params:
+              selector: app=api
+            autonomy: gated
+            max_attempts: 5
+
+      - name: orders-autoscaler
+        provider: k8s:default
+        probe:
+          type: keda-scaledobject
+          params:
+            name: orders-api
+          interval: 30
+        remediations:
+          - type: keda-unpause
+            params:
+              name: orders-api
+            autonomy: gated
+            max_attempts: 2

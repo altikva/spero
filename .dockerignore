@@ -1,0 +1,41 @@
+# VCS
+.git
+.gitignore
+
+# Python build artifacts and envs
+.venv
+venv
+dist
+build
+*.egg-info
+__pycache__
+*.py[cod]
+
+# Tooling caches
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov
+
+# codegraph index
+.codegraph
+
+# Runtime DBs
+*.db
+*.sqlite3
+
+# Tests are not needed in the image
+tests
+
+# CI config
+.github
+
+# Editor / OS
+.idea
+.vscode
+.DS_Store
+
+# Local agent config
+.mcp.json
+CLAUDE.md
