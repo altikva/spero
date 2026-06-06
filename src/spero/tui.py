@@ -19,7 +19,7 @@ target is the one ``a`` approves.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from rich.text import Text
 from textual.app import App, ComposeResult
@@ -28,6 +28,15 @@ from textual.widgets import DataTable, Footer, RichLog, Static
 
 from spero.core.engine import ActionStatus, Engine
 from spero.core.models import Policy, RemediationSpec, TargetPolicy
+
+if TYPE_CHECKING:
+    import httpx
+
+_DASH_CSS = """
+#status { height: 1; padding: 0 1; }
+#targets { height: 2fr; }
+#events { height: 1fr; border: round $panel-darken-1; padding: 0 1; }
+"""
 
 _STATUS_STYLE = {
     ActionStatus.applied: "green",
@@ -186,3 +195,130 @@ def run_top_app(policy_obj: object, *, interval: float, store: bool) -> None:
     """Run the Textual dashboard (blocking; Textual owns its own event loop)."""
     assert isinstance(policy_obj, Policy)
     SperoTopApp(policy_obj, interval=interval, store=store).run()
+
+
+class SperoRemoteApp(App[None]):
+    """Observe a remote spero by polling its /status + /events (mouse, selection, scroll)."""
+
+    TITLE = "spero top (remote)"
+    CSS = _DASH_CSS
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("q", "quit", "quit"),
+        Binding("r", "refresh", "refresh"),
+        Binding("p", "pause", "pause"),
+    ]
+
+    def __init__(self, url: str, *, interval: float) -> None:
+        super().__init__()
+        self.url = url
+        self.interval = interval
+        self.paused = False
+        self._client: httpx.AsyncClient | None = None
+        self._cols: list = []
+        self._rows: set[str] = set()
+
+    def compose(self) -> ComposeResult:
+        yield Static(id="status")
+        yield DataTable(id="targets", cursor_type="row", zebra_stripes=True)
+        yield RichLog(id="events", markup=True, highlight=False, wrap=True)
+        yield Footer()
+
+    def on_mount(self) -> None:
+        import httpx
+
+        self._client = httpx.AsyncClient(base_url=self.url, timeout=5.0)
+        self._cols = self.query_one("#targets", DataTable).add_columns(*_COLUMNS)
+        self._update_status(connected=True)
+        self.set_interval(self.interval, self._tick)
+        self._tick()
+
+    def _tick(self) -> None:
+        self.run_worker(self._poll(), exclusive=True, group="poll")
+
+    async def _poll(self) -> None:
+        if self.paused or self._client is None:
+            return
+        try:
+            status = (await self._client.get("/status")).raise_for_status().json()
+            body = (await self._client.get("/events")).raise_for_status().json()
+        except Exception as exc:
+            self._update_status(connected=False, error=str(exc))
+            return
+        self._repaint(status)
+        self._repaint_events(body.get("events", []))
+        self._update_status(connected=True, frozen=bool(status.get("frozen")))
+
+    def _repaint(self, status: dict) -> None:
+        table = self.query_one("#targets", DataTable)
+        for t in status.get("targets", []):
+            name = str(t.get("target", ""))
+            healthy = t.get("healthy")
+            if healthy is None:
+                health = Text("...", style="dim")
+            else:
+                health = (
+                    Text("healthy", style="green") if healthy else Text("DOWN", style="bold red")
+                )
+            a = t.get("action")
+            if a:
+                try:
+                    style = _STATUS_STYLE.get(ActionStatus(a["status"]), "white")
+                except ValueError:
+                    style = "white"
+                action = Text(f"{a['remediation']}:{a['status']}", style=style)
+            else:
+                action = Text("")
+            fails = str(t.get("failures") or "") if t.get("failures") else ""
+            cells = [
+                name,
+                str(t.get("provider", "")),
+                str(t.get("probe", "")),
+                health,
+                fails,
+                action,
+                str(t.get("detail", "")),
+            ]
+            if name in self._rows:
+                for col, val in zip(self._cols, cells, strict=True):
+                    table.update_cell(name, col, val)
+            else:
+                table.add_row(*cells, key=name)
+                self._rows.add(name)
+
+    def _repaint_events(self, events: list[dict]) -> None:
+        log = self.query_one("#events", RichLog)
+        log.clear()
+        for e in events[-50:]:
+            log.write(
+                f"[dim]{e.get('target', '')}[/] "
+                f"[{_event_style(e.get('kind', ''))}]{e.get('kind', '')}[/] {e.get('detail', '')}"
+            )
+
+    def _update_status(self, *, connected: bool, frozen: bool = False, error: str = "") -> None:
+        tag = ""
+        if self.paused:
+            tag += "  [yellow]PAUSED[/]"
+        if frozen:
+            tag += "  [yellow]FROZEN[/]"
+        if not connected:
+            tag += f"  [red]unreachable: {error}[/]"
+        self.query_one("#status", Static).update(
+            f"[bold cyan]spero top[/] [dim]remote {self.url}[/]{tag}"
+            f"  [dim]{datetime.now():%H:%M:%S}[/]"
+        )
+
+    async def on_unmount(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+
+    def action_pause(self) -> None:
+        self.paused = not self.paused
+        self._update_status(connected=True)
+
+    def action_refresh(self) -> None:
+        self._tick()
+
+
+def run_remote_app(url: str, *, interval: float) -> None:
+    """Run the Textual remote dashboard against a spero control plane (blocking)."""
+    SperoRemoteApp(url, interval=interval).run()
