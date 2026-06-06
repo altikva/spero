@@ -1,0 +1,30 @@
+# Acting opt-in: the MUTATING verbs spero needs to remediate. The base stays
+# read-only; this overlay adds (never replaces) the power to act.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: spero-remediator
+  labels:
+    app.kubernetes.io/name: spero
+    app.kubernetes.io/part-of: spero
+    app.kubernetes.io/component: remediator
+rules:
+  # Patch deployments (rollout restart) and scale them.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "patch", "update"]
+  # Delete pods (recreate-pod remediation).
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]
+  # Un-pause / patch KEDA ScaledObjects.
+  - apiGroups: ["keda.sh"]
+    resources: ["scaledobjects"]
+    verbs: ["patch"]
+  # Leader election: one active remediator even if the Deployment scales up.
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
