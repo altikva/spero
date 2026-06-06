@@ -4,9 +4,9 @@
 # __copyright__ = "Copyright 2026 ALTIKVA."
 # __licence__ = "MIT & CC BY-NC-SA (https://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-# Description: Tests for ElpioServiceProbe -- Ready/NotReady, scaled-to-zero, and policy build.
+# Description: Tests for the elpio probes against elpio v0.1.0's real status shape.
 
-"""Tests for the EXPERIMENTAL ElpioService probe (elpio day-2 supervision)."""
+"""Tests for the elpio CRD probes (status.ready + Ready condition, group elpio.io)."""
 
 from __future__ import annotations
 
@@ -20,40 +20,41 @@ from spero.probes import build_probe
 from spero.probes.elpio import ElpioFunctionProbe, ElpioServiceProbe, ElpioTaskProbe
 
 
-def _svc(ready: str, *, revision: str | None = None, extra: list[dict] | None = None) -> str:
-    conditions = [{"type": "Ready", "status": ready}]
-    if extra:
-        conditions += extra
-    status: dict = {"conditions": conditions}
-    if revision:
-        status["latestReadyRevisionName"] = revision
+def _status(ready: bool, *, reason: str = "", **extra: object) -> str:
+    # Mirrors elpio's real status: a `ready` bool plus a Ready condition ("True"/"False").
+    status: dict = {
+        "ready": ready,
+        "conditions": [{"type": "Ready", "status": "True" if ready else "False", "reason": reason}],
+        **extra,
+    }
     return json.dumps({"status": status})
 
 
-async def test_ready_is_healthy() -> None:
-    provider = ScriptedProvider(fixed(0, _svc("True", revision="orders-00003")))
+# --- ElpioService ---
+
+
+async def test_service_ready_names_engine() -> None:
+    provider = ScriptedProvider(fixed(0, _status(True, engine="knative")))
     r = await ElpioServiceProbe("orders").check(provider)
     assert r.healthy
-    assert "orders-00003" in r.detail
-    assert provider.commands == [["get", "elpioservice", "orders", "-o", "json"]]
+    assert "on knative" in r.detail
+    assert provider.commands == [["get", "elpioservice.elpio.io", "orders", "-o", "json"]]
 
 
-async def test_ready_without_revision_still_healthy() -> None:
-    r = await ElpioServiceProbe("orders").check(ScriptedProvider(fixed(0, _svc("True"))))
-    assert r.healthy
-    assert "Ready" in r.detail
-
-
-async def test_not_ready_surfaces_failing_subcondition() -> None:
-    body = _svc(
-        "False",
-        extra=[{"type": "RoutesReady", "status": "False", "reason": "IngressNotConfigured"}],
-    )
+async def test_service_ready_via_condition_only() -> None:
+    # No `ready` bool, only the Ready condition -> still healthy (fallback path).
+    body = json.dumps({"status": {"conditions": [{"type": "Ready", "status": "True"}]}})
     r = await ElpioServiceProbe("orders").check(ScriptedProvider(fixed(0, body)))
+    assert r.healthy
+
+
+async def test_service_not_ready_surfaces_reason() -> None:
+    r = await ElpioServiceProbe("orders").check(
+        ScriptedProvider(fixed(0, _status(False, reason="ImagePullBackOff")))
+    )
     assert not r.healthy
-    assert "not Ready" in r.detail
-    assert "RoutesReady" in r.detail
-    assert "IngressNotConfigured" in r.detail
+    assert "not ready" in r.detail
+    assert "ImagePullBackOff" in r.detail
 
 
 async def test_kubectl_failure_is_unhealthy() -> None:
@@ -81,68 +82,47 @@ def test_bad_params_rejected() -> None:
 # --- ElpioFunction ---
 
 
-def _fn(ready: str, *, service: str | None = None, extra: list[dict] | None = None) -> str:
-    conditions = [{"type": "Ready", "status": ready}]
-    if extra:
-        conditions += extra
-    status: dict = {"conditions": conditions}
-    if service:
-        status["serviceName"] = service
-    return json.dumps({"status": status})
-
-
 async def test_function_ready_names_service() -> None:
-    provider = ScriptedProvider(fixed(0, _fn("True", service="orders-svc")))
+    provider = ScriptedProvider(fixed(0, _status(True, serviceName="orders-svc")))
     r = await ElpioFunctionProbe("orders-fn").check(provider)
     assert r.healthy
     assert "orders-svc" in r.detail
-    assert provider.commands == [["get", "elpiofunction", "orders-fn", "-o", "json"]]
+    assert provider.commands == [["get", "elpiofunction.elpio.io", "orders-fn", "-o", "json"]]
 
 
 async def test_function_build_failure_surfaces_reason() -> None:
-    body = _fn(
-        "False",
-        extra=[{"type": "BuildReady", "status": "False", "reason": "TektonPipelineFailed"}],
+    r = await ElpioFunctionProbe("orders-fn").check(
+        ScriptedProvider(fixed(0, _status(False, reason="BuildFailed", phase="BuildFailed")))
     )
-    r = await ElpioFunctionProbe("orders-fn").check(ScriptedProvider(fixed(0, body)))
     assert not r.healthy
-    assert "BuildReady" in r.detail
-    assert "TektonPipelineFailed" in r.detail
+    assert "not ready" in r.detail
+    assert "BuildFailed" in r.detail
 
 
 # --- ElpioTask ---
 
 
-def _task(ready: str, *, active: str = "False", queue: int | None = None) -> str:
-    status: dict = {
-        "conditions": [{"type": "Ready", "status": ready}, {"type": "Active", "status": active}]
-    }
-    if queue is not None:
-        status["queueLength"] = queue
-    return json.dumps({"status": status})
-
-
-async def test_task_active_reports_processing_and_backlog() -> None:
+async def test_task_ready_with_backlog() -> None:
     r = await ElpioTaskProbe("emails").check(
-        ScriptedProvider(fixed(0, _task("True", active="True", queue=42)))
+        ScriptedProvider(fixed(0, _status(True, queueLength=42)))
     )
     assert r.healthy
-    assert "processing" in r.detail
     assert "42 queued" in r.detail
+    assert "elpiotask.elpio.io" not in r.detail  # detail is human text, not the resource
 
 
-async def test_task_idle_is_healthy() -> None:
-    r = await ElpioTaskProbe("emails").check(
-        ScriptedProvider(fixed(0, _task("True", active="False")))
-    )
+async def test_task_ready_no_backlog() -> None:
+    r = await ElpioTaskProbe("emails").check(ScriptedProvider(fixed(0, _status(True))))
     assert r.healthy
-    assert "idle" in r.detail
+    assert "ready" in r.detail
 
 
 async def test_task_not_ready_is_unhealthy() -> None:
-    r = await ElpioTaskProbe("emails").check(ScriptedProvider(fixed(0, _task("False"))))
+    r = await ElpioTaskProbe("emails").check(
+        ScriptedProvider(fixed(0, _status(False, reason="DispatcherCrashLoop")))
+    )
     assert not r.healthy
-    assert "not Ready" in r.detail
+    assert "not ready" in r.detail
 
 
 def test_registry_builds_function_and_task() -> None:
