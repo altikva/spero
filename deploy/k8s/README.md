@@ -16,7 +16,7 @@ deploy/k8s/
 
 The base grants read access only (get, list, watch) to the resources the probes
 read: pods, pod metrics (metrics.k8s.io), deployments (apps), KEDA
-ScaledObjects (keda.sh), elpio resources (elpio.altikva.com), and Knative
+ScaledObjects (keda.sh), elpio resources (elpio.io), and Knative
 Serving services and revisions (serving.knative.dev). With the base alone, spero
 observes and reports but cannot change anything in the cluster, even if a policy
 declares remediations.

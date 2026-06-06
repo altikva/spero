@@ -25,7 +25,7 @@ rules:
     resources: ["scaledobjects"]
     verbs: ["get", "list", "watch"]
   # elpio custom resources.
-  - apiGroups: ["elpio.altikva.com"]
+  - apiGroups: ["elpio.io"]
     resources: ["elpioservices", "elpiofunctions", "elpiotasks"]
     verbs: ["get", "list", "watch"]
   # Knative Serving.
