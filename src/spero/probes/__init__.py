@@ -27,6 +27,7 @@ from spero.probes.elpio import (  # EXPERIMENTAL: elpio day-2 supervision
 )
 from spero.probes.host import DiskProbe, PortProbe, ProcessProbe, SystemdProbe
 from spero.probes.keda import KedaScaledObjectProbe  # EXPERIMENTAL: elpio serverless seam spike
+from spero.probes.knative import KnativeServiceProbe  # EXPERIMENTAL: Knative Service supervision
 from spero.probes.kubernetes import DeploymentProbe, PodReadyProbe
 from spero.probes.resources import ResourceUsageProbe
 
@@ -44,6 +45,7 @@ PROBES: dict[str, type[Probe]] = {
         ElpioServiceProbe,
         ElpioFunctionProbe,
         ElpioTaskProbe,
+        KnativeServiceProbe,
         HttpProbe,
         CommandProbe,
         PostgresProbe,
@@ -78,6 +80,7 @@ __all__ = [
     "HttpProbe",
     "KafkaProbe",
     "KedaScaledObjectProbe",
+    "KnativeServiceProbe",
     "PodReadyProbe",
     "PortProbe",
     "PostgresProbe",
