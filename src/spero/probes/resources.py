@@ -43,6 +43,9 @@ class ResourceUsageProbe(Probe):
         self.cpu_threshold = float(cpu_threshold_pct)
         self.mem_threshold = float(mem_threshold_pct)
 
+    def object_ref(self) -> list[str]:
+        return ["pods", "-l", self.selector]
+
     async def check(self, provider: Provider) -> ProbeResult:
         top = await provider.run(["top", "pod", "-l", self.selector, "--no-headers"], timeout=30)
         if not top.ok:
