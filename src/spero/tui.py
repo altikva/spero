@@ -24,7 +24,8 @@ from typing import TYPE_CHECKING, ClassVar
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
-from textual.widgets import DataTable, Footer, RichLog, Static
+from textual.screen import ModalScreen
+from textual.widgets import DataTable, Footer, RichLog, Static, TextArea
 
 from spero.core.engine import ActionStatus, Engine
 from spero.core.models import Policy, RemediationSpec, TargetPolicy
@@ -60,6 +61,32 @@ _STATUS_STYLE = {
 _COLUMNS = ("Target", "Provider", "Probe", "Health", "Fails", "Action", "Detail")
 
 
+class InspectScreen(ModalScreen[None]):
+    """A scrollable, read-only view of a target's object YAML (q / esc to close)."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "close", "close"),
+        Binding("q", "close", "close"),
+    ]
+    CSS = """
+    InspectScreen { align: center middle; }
+    InspectScreen TextArea { width: 90%; height: 90%; border: round $accent; }
+    """
+
+    def __init__(self, title: str, yaml_text: str) -> None:
+        super().__init__()
+        self._title = title
+        self._yaml = yaml_text
+
+    def compose(self) -> ComposeResult:
+        area = TextArea(self._yaml, read_only=True, show_line_numbers=True)
+        area.border_title = f" {self._title} "
+        yield area
+
+    def action_close(self) -> None:
+        self.dismiss()
+
+
 class SperoTopApp(App[None]):
     """Live supervision dashboard with selection, mouse, and scrollback."""
 
@@ -73,6 +100,7 @@ class SperoTopApp(App[None]):
         Binding("r", "refresh", "refresh"),
         Binding("a", "approve", "approve selected"),
         Binding("f", "freeze", "toggle freeze"),
+        Binding("i", "inspect", "inspect yaml"),
     ]
 
     def __init__(self, policy: Policy, *, interval: float, store: bool) -> None:
@@ -196,6 +224,33 @@ class SperoTopApp(App[None]):
         else:
             self.notify(f"{name}: nothing awaiting approval", severity="warning")
 
+    def action_inspect(self) -> None:
+        table = self.query_one("#targets", DataTable)
+        if table.row_count:
+            self._open_inspect(
+                str(table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value)
+            )
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        self._open_inspect(str(event.row_key.value))
+
+    def _open_inspect(self, name: str) -> None:
+        self.run_worker(self._inspect(name), exclusive=False, group="inspect")
+
+    async def _inspect(self, name: str) -> None:
+        from spero.core.inspect import object_yaml
+
+        target = next((t for t in self.policy.targets if t.name == name), None)
+        if target is None:
+            return
+        try:
+            text = await object_yaml(target)
+        except LookupError as exc:
+            text = f"# {exc}"
+        except Exception as exc:
+            text = f"# error fetching {name}:\n# {exc}"
+        self.push_screen(InspectScreen(name, text))
+
 
 def _event_style(kind: str) -> str:
     return {"probe_fail": "red", "remediation": "yellow", "error": "red", "info": "green"}.get(
@@ -228,6 +283,7 @@ class SperoRemoteApp(App[None]):
         Binding("q", "quit", "quit"),
         Binding("r", "refresh", "refresh"),
         Binding("p", "pause", "pause"),
+        Binding("i", "inspect", "inspect yaml"),
     ]
 
     def __init__(self, url: str, *, interval: float) -> None:
@@ -341,6 +397,33 @@ class SperoRemoteApp(App[None]):
 
     def action_refresh(self) -> None:
         self._tick()
+
+    def action_inspect(self) -> None:
+        table = self.query_one("#targets", DataTable)
+        if table.row_count:
+            self._open_inspect(
+                str(table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value)
+            )
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        self._open_inspect(str(event.row_key.value))
+
+    def _open_inspect(self, name: str) -> None:
+        self.run_worker(self._fetch_inspect(name), exclusive=False, group="inspect")
+
+    async def _fetch_inspect(self, name: str) -> None:
+        if self._client is None:
+            return
+        try:
+            resp = await self._client.get(f"/objects/{name}")
+            text = (
+                resp.json().get("yaml", "")
+                if resp.status_code == 200
+                else (f"# {name}: HTTP {resp.status_code}\n# {resp.text}")
+            )
+        except Exception as exc:
+            text = f"# error fetching {name}:\n# {exc}"
+        self.push_screen(InspectScreen(name, text))
 
 
 def run_remote_app(url: str, *, interval: float) -> None:

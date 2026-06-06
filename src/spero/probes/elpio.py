@@ -46,6 +46,9 @@ class ElpioServiceProbe(Probe):
     def __init__(self, name: str) -> None:
         self.name = name
 
+    def object_ref(self) -> list[str]:
+        return ["elpioservice.elpio.io", self.name]
+
     async def check(self, provider: Provider) -> ProbeResult:
         r = await provider.run(
             ["get", "elpioservice.elpio.io", self.name, "-o", "json"], timeout=30
@@ -77,6 +80,9 @@ class ElpioFunctionProbe(Probe):
     def __init__(self, name: str) -> None:
         self.name = name
 
+    def object_ref(self) -> list[str]:
+        return ["elpiofunction.elpio.io", self.name]
+
     async def check(self, provider: Provider) -> ProbeResult:
         r = await provider.run(
             ["get", "elpiofunction.elpio.io", self.name, "-o", "json"], timeout=30
@@ -107,6 +113,9 @@ class ElpioTaskProbe(Probe):
 
     def __init__(self, name: str) -> None:
         self.name = name
+
+    def object_ref(self) -> list[str]:
+        return ["elpiotask.elpio.io", self.name]
 
     async def check(self, provider: Provider) -> ProbeResult:
         r = await provider.run(["get", "elpiotask.elpio.io", self.name, "-o", "json"], timeout=30)
