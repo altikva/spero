@@ -74,6 +74,19 @@ def create_app(settings: Settings | None = None, supervisor: Supervisor | None =
             raise HTTPException(503, "not supervising; run `spero serve`")
         return {"events": supervisor.events(limit)}
 
+    @app.get("/objects/{name}")
+    async def object_yaml(name: str) -> dict[str, str]:
+        if supervisor is None:
+            raise HTTPException(503, "not supervising; run `spero serve`")
+        try:
+            return {"yaml": await supervisor.object_yaml(name)}
+        except KeyError:
+            raise HTTPException(404, f"unknown target: {name}") from None
+        except LookupError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(502, f"kubectl error: {exc}") from exc
+
     @app.get("/targets")
     def targets() -> dict[str, object]:
         try:

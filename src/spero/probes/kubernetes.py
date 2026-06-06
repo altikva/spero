@@ -32,6 +32,9 @@ class PodReadyProbe(Probe):
         self.selector = selector
         self.min_ready = int(min_ready)
 
+    def object_ref(self) -> list[str]:
+        return ["pods", "-l", self.selector]
+
     async def check(self, provider: Provider) -> ProbeResult:
         r = await provider.run(["get", "pods", "-l", self.selector, "-o", "json"], timeout=30)
         if not r.ok:
@@ -52,6 +55,9 @@ class DeploymentProbe(Probe):
 
     def __init__(self, name: str) -> None:
         self.name = name
+
+    def object_ref(self) -> list[str]:
+        return ["deployment", self.name]
 
     async def check(self, provider: Provider) -> ProbeResult:
         r = await provider.run(["get", "deployment", self.name, "-o", "json"], timeout=30)

@@ -35,3 +35,11 @@ class Probe(ABC):
     @abstractmethod
     async def check(self, provider: Provider) -> ProbeResult:
         raise NotImplementedError
+
+    def object_ref(self) -> list[str] | None:
+        """kubectl args naming the underlying object(s), for `get <ref> -o yaml`.
+
+        Returns None when there is no single inspectable Kubernetes object (host and
+        data-infra probes). Used by `spero top` to show a target's YAML on demand.
+        """
+        return None

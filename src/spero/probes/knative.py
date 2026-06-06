@@ -47,6 +47,9 @@ class KnativeServiceProbe(Probe):
     def __init__(self, name: str) -> None:
         self.name = name
 
+    def object_ref(self) -> list[str]:
+        return ["ksvc", self.name]
+
     async def check(self, provider: Provider) -> ProbeResult:
         r = await provider.run(["get", "ksvc", self.name, "-o", "json"], timeout=30)
         if not r.ok:

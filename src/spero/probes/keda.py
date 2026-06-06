@@ -44,6 +44,9 @@ class KedaScaledObjectProbe(Probe):
     def __init__(self, name: str) -> None:
         self.name = name
 
+    def object_ref(self) -> list[str]:
+        return ["scaledobject", self.name]
+
     async def check(self, provider: Provider) -> ProbeResult:
         r = await provider.run(["get", "scaledobject", self.name, "-o", "json"], timeout=30)
         if not r.ok:
