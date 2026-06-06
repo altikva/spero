@@ -84,6 +84,18 @@ see what the in-cluster worker is supervising without running any probes yoursel
 This is the pull-based read model; the dial-home design below is the push-based
 version where the worker reaches out to a remote owner.
 
+## Dial-home (implemented)
+
+The dial-home path is real: run the fleet owner with `spero owner` (a service the
+agents reach), and run the in-cluster worker as `spero agent --owner <url>` instead
+of `spero serve`. The agent supervises locally and POSTs its status + events to the
+owner on a timer; the response carries orders. A gated remediation waits for the
+owner via a RemoteApprover (the engine's existing approver slot), so a human approves
+a target's action with `POST /agents/<id>/approve {"target": "<name>"}` and the next
+agent report applies it. `auto` actions still run unattended even if the owner is
+offline. To use it in-cluster, set the Deployment args to
+`["agent", "--owner", "$(SPERO_OWNER_URL)", "--policy", "/etc/spero/policy.yaml"]`.
+
 ## Dial-home design
 
 Spero runs as a plain always-on Deployment, not a Knative scale-to-zero service.
