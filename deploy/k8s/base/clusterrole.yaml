@@ -1,0 +1,34 @@
+# Supervise-only: every rule here is read-only (get/list/watch). This is the
+# whole permission surface of the always-on base. Acting (mutating) verbs live
+# in the acting overlay, never here.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: spero-supervisor
+  labels:
+    app.kubernetes.io/name: spero
+    app.kubernetes.io/part-of: spero
+rules:
+  # Pods and pod metrics: the core health signal.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  # Deployments.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  # KEDA ScaledObjects.
+  - apiGroups: ["keda.sh"]
+    resources: ["scaledobjects"]
+    verbs: ["get", "list", "watch"]
+  # elpio custom resources.
+  - apiGroups: ["elpio.altikva.com"]
+    resources: ["elpioservices", "elpiofunctions", "elpiotasks"]
+    verbs: ["get", "list", "watch"]
+  # Knative Serving.
+  - apiGroups: ["serving.knative.dev"]
+    resources: ["services", "revisions"]
+    verbs: ["get", "list", "watch"]
