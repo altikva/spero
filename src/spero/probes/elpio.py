@@ -5,20 +5,21 @@
 # __licence__ = "MIT & CC BY-NC-SA (https://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 # Description: Elpio CRD probes -- supervise elpio's serverless objects (Service,
-#              Function, Task) by reading their Knative/KEDA-style Ready condition.
+#              Function, Task) by reading their elpio.io status.ready + Ready condition.
 
 """Elpio CRD probes: are elpio's serverless objects (Service, Function, Task) Ready?
 
-EXPERIMENTAL (see docs/experiments/0001-keda-seam.md). This is the day-2 half of
-council option (c): spero supervises elpio's own custom resources, while elpio's
-operator owns provisioning them. The three RFC 0001 objects (renamed from A4C*)
-all reconcile down to Knative / KEDA primitives and carry status conditions, so
-supervising any of them is the same shape as `DeploymentProbe`: a `kubectl get`
-plus a read of the `Ready` condition.
+EXPERIMENTAL. This is the day-2 half of council option (c): spero supervises elpio's
+own custom resources (group ``elpio.io``), while elpio's operator owns provisioning
+them. Each CR carries a canonical ``status.ready`` boolean plus a Kubernetes-style
+``Ready`` condition (status ``"True"``/``"False"`` with a reason); supervising any of
+them is the same shape as ``DeploymentProbe``: a ``kubectl get`` and a read of status.
+Verified against elpio v0.1.0's CRDs and operator.
 
-- `ElpioService` (A4CService): a Cloud Run-like service -> Knative `Service`.
-- `ElpioFunction` (A4CFunction): source -> Tekton build -> produces an `ElpioService`.
-- `ElpioTask` (A4CTask): a durable queue worker, KEDA-backed (carries `Active`).
+- ``ElpioService``: a Cloud Run-like service. status: ready, engine, url.
+- ``ElpioFunction``: source -> build -> produces an ElpioService. status: ready,
+  phase (Building/Ready/BuildFailed), serviceName.
+- ``ElpioTask``: a durable queue worker (KEDA-backed dispatcher). status: ready.
 
 Provisioning the resources stays elpio's job, not spero's.
 """
@@ -33,13 +34,11 @@ from spero.providers.base import Provider
 
 
 class ElpioServiceProbe(Probe):
-    """Healthy iff the ElpioService ``name`` reports ``Ready=True``.
+    """Healthy iff the ElpioService ``name`` reports ready. Detail names the engine.
 
-    Scaled-to-zero is healthy: a Knative-backed service idles at zero replicas but
-    stays Ready, exactly like DeploymentProbe treats a deliberate 0-replica target.
-    When not Ready, the detail surfaces the first failing sub-condition (e.g.
-    ``ConfigurationsReady`` / ``RoutesReady``) and its reason, so the operator sees
-    why without a second kubectl call.
+    Scale-to-zero is healthy: an idle elpio service stays ready, like DeploymentProbe
+    treats a deliberate 0-replica target. When not ready, the detail carries the
+    operator's reason so no second kubectl call is needed.
     """
 
     type: ClassVar[str] = "elpio-service"
@@ -48,7 +47,9 @@ class ElpioServiceProbe(Probe):
         self.name = name
 
     async def check(self, provider: Provider) -> ProbeResult:
-        r = await provider.run(["get", "elpioservice", self.name, "-o", "json"], timeout=30)
+        r = await provider.run(
+            ["get", "elpioservice.elpio.io", self.name, "-o", "json"], timeout=30
+        )
         if not r.ok:
             return ProbeResult(False, f"kubectl get elpioservice failed: {r.stderr.strip()}")
         try:
@@ -56,23 +57,19 @@ class ElpioServiceProbe(Probe):
         except json.JSONDecodeError as exc:
             return ProbeResult(False, f"could not parse kubectl json: {exc}")
 
-        conditions = status.get("conditions", [])
-        ready = _find(conditions, "Ready")
-        if ready.get("status") != "True":
-            return ProbeResult(False, f"{self.name}: not Ready{_why(conditions)}")
-
-        revision = status.get("latestReadyRevisionName")
-        rev = f", revision {revision}" if revision else ""
-        return ProbeResult(True, f"{self.name}: Ready{rev}")
+        ready, reason = _ready(status)
+        if not ready:
+            return ProbeResult(False, f"{self.name}: not ready{_paren(reason)}")
+        engine = status.get("engine")
+        return ProbeResult(True, f"{self.name}: ready{_on(engine)}")
 
 
 class ElpioFunctionProbe(Probe):
-    """Healthy iff the ElpioFunction ``name`` reports ``Ready=True``.
+    """Healthy iff the ElpioFunction ``name`` reports ready (build succeeded).
 
-    An ElpioFunction (RFC 0001's renamed A4CFunction) builds source into a container
-    via Tekton, then produces an ElpioService. Not Ready usually means a failed build
-    or a not-yet-Ready produced service; the detail names the failing sub-condition
-    (e.g. ``BuildReady``) and its reason so the operator sees which half broke.
+    An ElpioFunction builds source into a container, then produces an ElpioService.
+    Not ready means the build is in progress or failed; the operator's reason/phase
+    (e.g. ``BuildFailed``) is surfaced. When ready, the produced service is named.
     """
 
     type: ClassVar[str] = "elpio-function"
@@ -81,7 +78,9 @@ class ElpioFunctionProbe(Probe):
         self.name = name
 
     async def check(self, provider: Provider) -> ProbeResult:
-        r = await provider.run(["get", "elpiofunction", self.name, "-o", "json"], timeout=30)
+        r = await provider.run(
+            ["get", "elpiofunction.elpio.io", self.name, "-o", "json"], timeout=30
+        )
         if not r.ok:
             return ProbeResult(False, f"kubectl get elpiofunction failed: {r.stderr.strip()}")
         try:
@@ -89,21 +88,19 @@ class ElpioFunctionProbe(Probe):
         except json.JSONDecodeError as exc:
             return ProbeResult(False, f"could not parse kubectl json: {exc}")
 
-        conditions = status.get("conditions", [])
-        if _find(conditions, "Ready").get("status") != "True":
-            return ProbeResult(False, f"{self.name}: not Ready{_why(conditions)}")
+        ready, reason = _ready(status)
+        if not ready:
+            return ProbeResult(False, f"{self.name}: not ready{_paren(reason)}")
         service = status.get("serviceName")
-        svc = f", serves {service}" if service else ""
-        return ProbeResult(True, f"{self.name}: Ready{svc}")
+        return ProbeResult(True, f"{self.name}: ready{f', serves {service}' if service else ''}")
 
 
 class ElpioTaskProbe(Probe):
-    """Healthy iff the ElpioTask ``name`` reports ``Ready=True``.
+    """Healthy iff the ElpioTask ``name`` reports ready.
 
-    An ElpioTask (RFC 0001's renamed A4CTask) is a durable queue worker, KEDA-backed,
-    so it carries an ``Active`` condition: Active=True means it is draining the queue,
-    Active=False means idle (scaled to zero); both are healthy when Ready. The detail
-    reports the processing state and the queue backlog when the status exposes it.
+    An ElpioTask is a durable queue worker (a dispatcher scaled by KEDA off queue
+    depth). Idle (scaled to zero) is healthy when ready. The queue backlog is shown
+    when the status exposes it.
     """
 
     type: ClassVar[str] = "elpio-task"
@@ -112,7 +109,7 @@ class ElpioTaskProbe(Probe):
         self.name = name
 
     async def check(self, provider: Provider) -> ProbeResult:
-        r = await provider.run(["get", "elpiotask", self.name, "-o", "json"], timeout=30)
+        r = await provider.run(["get", "elpiotask.elpio.io", self.name, "-o", "json"], timeout=30)
         if not r.ok:
             return ProbeResult(False, f"kubectl get elpiotask failed: {r.stderr.strip()}")
         try:
@@ -120,14 +117,21 @@ class ElpioTaskProbe(Probe):
         except json.JSONDecodeError as exc:
             return ProbeResult(False, f"could not parse kubectl json: {exc}")
 
-        conditions = status.get("conditions", [])
-        if _find(conditions, "Ready").get("status") != "True":
-            return ProbeResult(False, f"{self.name}: not Ready{_why(conditions)}")
-        active = _find(conditions, "Active").get("status") == "True"
-        state = "processing" if active else "idle (scaled to zero)"
+        ready, reason = _ready(status)
+        if not ready:
+            return ProbeResult(False, f"{self.name}: not ready{_paren(reason)}")
         backlog = status.get("queueLength")
         depth = f", {backlog} queued" if backlog is not None else ""
-        return ProbeResult(True, f"{self.name}: Ready, {state}{depth}")
+        return ProbeResult(True, f"{self.name}: ready{depth}")
+
+
+def _ready(status: dict) -> tuple[bool, str]:
+    """Elpio readiness. ``status.ready`` (bool) is canonical; the ``Ready`` condition
+    is the fallback. Returns (ready, reason) where reason explains a not-ready state."""
+    cond = _find(status.get("conditions", []), "Ready")
+    ready = status.get("ready") is True or cond.get("status") == "True"
+    reason = str(cond.get("reason") or cond.get("message") or status.get("phase") or "")
+    return ready, reason
 
 
 def _find(conditions: object, kind: str) -> dict[str, object]:
@@ -139,12 +143,9 @@ def _find(conditions: object, kind: str) -> dict[str, object]:
     return {}
 
 
-def _why(conditions: object) -> str:
-    """Summarize the first non-True condition as ' (Type: reason)', or '' if none."""
-    if not isinstance(conditions, list):
-        return ""
-    for c in conditions:
-        if isinstance(c, dict) and c.get("type") != "Ready" and c.get("status") != "True":
-            reason = c.get("reason") or c.get("message") or "?"
-            return f" ({c.get('type')}: {reason})"
-    return ""
+def _paren(reason: str) -> str:
+    return f" ({reason})" if reason else ""
+
+
+def _on(engine: object) -> str:
+    return f" on {engine}" if engine else ""
