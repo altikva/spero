@@ -96,3 +96,25 @@ def test_objects_404_and_422_with_supervisor() -> None:
     api = TestClient(create_app(supervisor=Supervisor(pol)))
     assert api.get("/objects/missing").status_code == 404  # unknown target
     assert api.get("/objects/nginx").status_code == 422  # host probe has no k8s object
+
+
+def test_logs_503_without_supervisor() -> None:
+    assert client.get("/logs/whatever").status_code == 503
+
+
+def test_logs_404_and_422_with_supervisor() -> None:
+    from spero.api.supervisor import Supervisor
+    from spero.core.models import Policy, ProbeSpec, TargetPolicy
+
+    pol = Policy(
+        targets=[
+            TargetPolicy(
+                name="nginx",
+                provider="local",
+                probe=ProbeSpec(type="systemd", params={"unit": "nginx.service"}),
+            )
+        ]
+    )
+    api = TestClient(create_app(supervisor=Supervisor(pol)))
+    assert api.get("/logs/missing").status_code == 404  # unknown target
+    assert api.get("/logs/nginx").status_code == 422  # host probe has no pods

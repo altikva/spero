@@ -87,6 +87,19 @@ def create_app(settings: Settings | None = None, supervisor: Supervisor | None =
         except RuntimeError as exc:
             raise HTTPException(502, f"kubectl error: {exc}") from exc
 
+    @app.get("/logs/{name}")
+    async def object_logs(name: str, tail: int = 200) -> dict[str, str]:
+        if supervisor is None:
+            raise HTTPException(503, "not supervising; run `spero serve`")
+        try:
+            return {"logs": await supervisor.object_logs(name, tail=tail)}
+        except KeyError:
+            raise HTTPException(404, f"unknown target: {name}") from None
+        except LookupError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(502, f"kubectl error: {exc}") from exc
+
     @app.get("/targets")
     def targets() -> dict[str, object]:
         try:

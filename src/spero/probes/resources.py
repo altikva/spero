@@ -46,6 +46,9 @@ class ResourceUsageProbe(Probe):
     def object_ref(self) -> list[str]:
         return ["pods", "-l", self.selector]
 
+    def pod_ref(self) -> list[str]:
+        return ["-l", self.selector]
+
     async def check(self, provider: Provider) -> ProbeResult:
         top = await provider.run(["top", "pod", "-l", self.selector, "--no-headers"], timeout=30)
         if not top.ok:

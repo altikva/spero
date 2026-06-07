@@ -48,3 +48,40 @@ async def test_object_yaml_lookuperror_for_host_target() -> None:
     )
     with pytest.raises(LookupError):
         await object_yaml(target)
+
+
+@pytest.mark.parametrize(
+    ("ptype", "params", "expected"),
+    [
+        ("deployment", {"name": "x"}, ["deployment/x"]),
+        ("pod", {"selector": "app=x"}, ["-l", "app=x"]),
+        ("resource-usage", {"selector": "app=x"}, ["-l", "app=x"]),
+        ("knative-service", {"name": "x"}, ["-l", "serving.knative.dev/service=x"]),
+    ],
+)
+def test_pod_ref(ptype: str, params: dict, expected: list[str]) -> None:
+    assert build_probe(ProbeSpec(type=ptype, params=params)).pod_ref() == expected
+
+
+@pytest.mark.parametrize(
+    ("ptype", "params"),
+    [
+        ("systemd", {"unit": "nginx.service"}),  # host probe: no pods
+        ("keda-scaledobject", {"name": "x"}),  # CRD: backing workload not addressable here
+        ("elpio-service", {"name": "x"}),
+    ],
+)
+def test_probes_without_pod_ref(ptype: str, params: dict) -> None:
+    assert build_probe(ProbeSpec(type=ptype, params=params)).pod_ref() is None
+
+
+async def test_object_logs_lookuperror_without_pods() -> None:
+    from spero.core.inspect import object_logs
+
+    target = TargetPolicy(
+        name="nginx",
+        provider="local",
+        probe=ProbeSpec(type="systemd", params={"unit": "nginx.service"}),
+    )
+    with pytest.raises(LookupError):
+        await object_logs(target)

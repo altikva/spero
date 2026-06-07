@@ -43,3 +43,14 @@ class Probe(ABC):
         data-infra probes). Used by `spero top` to show a target's YAML on demand.
         """
         return None
+
+    def pod_ref(self) -> list[str] | None:
+        """kubectl reference to the target's pod(s): a ``-l <selector>`` pair or a
+        ``<kind>/<name>`` workload that resolves to pods.
+
+        Shared by the log view (`kubectl logs <ref>`) and the local exec convenience
+        (`kubectl exec -it <pod>`). Returns None when the target has no pods to stream
+        or shell into: host/data-infra probes, and CRDs (KEDA, elpio) whose backing
+        workload is not directly addressable from the probe spec alone.
+        """
+        return None

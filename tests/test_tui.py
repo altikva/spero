@@ -51,6 +51,19 @@ async def test_app_mounts_and_keys_work() -> None:
         await pilot.press("q")
 
 
+async def test_logs_opens_a_screen() -> None:
+    from spero.tui import InspectScreen, SperoTopApp
+
+    app = SperoTopApp(_policy(), interval=999, store=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("l")  # the host target has no pods; the screen shows the reason
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(app.screen, InspectScreen)
+        await pilot.press("q")
+
+
 async def test_remote_app_renders_from_fake_api() -> None:
     # SperoRemoteApp polls /status + /events; stub its httpx client so no network.
     import httpx
@@ -75,6 +88,8 @@ async def test_remote_app_renders_from_fake_api() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/status":
             return httpx.Response(200, json=status)
+        if request.url.path.startswith("/logs/"):
+            return httpx.Response(200, json={"logs": "line one\nline two"})
         return httpx.Response(200, json={"events": []})
 
     app = SperoRemoteApp("http://test", interval=999)
@@ -89,4 +104,12 @@ async def test_remote_app_renders_from_fake_api() -> None:
         assert table.row_count == 1
         await pilot.press("p")
         assert app.paused is True
+        app.paused = False
+
+        from spero.tui import InspectScreen
+
+        await pilot.press("l")  # fetch /logs/orders from the mock and show it
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(app.screen, InspectScreen)
         await pilot.press("q")
