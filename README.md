@@ -24,6 +24,8 @@ single-host tool like Monit and a full Prometheus + Alertmanager + Ansible stack
 lightweight, agent-based, cluster-aware, with an AI layer for prediction,
 root-cause, and policy-gated remediation.
 
+![spero top, the live supervision dashboard](assets/spero-top.svg)
+
 Shipped under [Altikva](https://altikva.com).
 
 > Status: pre-alpha but functional, published on PyPI as `spero` 0.4.0. It
