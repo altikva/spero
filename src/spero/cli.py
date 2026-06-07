@@ -284,7 +284,8 @@ def _render_top(
     frozen = " [yellow](action freeze ON)[/]" if policy_obj.frozen else ""
     pause_tag = " [yellow](paused)[/]" if paused else ""
     header = Panel(
-        f"[bold cyan]spero top[/]  {len(policy_obj.targets)} target(s){frozen}{pause_tag}"
+        f"[bold cyan]spero top[/] [dim]v{__version__}[/]"
+        f"  {len(policy_obj.targets)} target(s){frozen}{pause_tag}"
         f"  [dim]{_now()}[/]\n{_TOP_KEYS}",
         border_style="cyan",
     )
@@ -327,12 +328,13 @@ def _event_style(kind: str) -> str:
     )
 
 
-def _render_remote(status: dict, events: list[dict]) -> Group:
+def _render_remote(status: dict, events: list[dict], server_version: str = "") -> Group:
     """Render the dashboard from a remote spero's /status + /events JSON."""
     targets = status.get("targets") or []
     frozen = " [yellow](action freeze ON)[/]" if status.get("frozen") else ""
+    ver = f" [dim]server v{server_version}[/]" if server_version else ""
     header = Panel(
-        f"[bold cyan]spero top[/] [dim]remote[/]  {len(targets)} target(s){frozen}"
+        f"[bold cyan]spero top[/] [dim]remote[/]{ver}  {len(targets)} target(s){frozen}"
         f"  [dim]{_now()}[/]",
         border_style="cyan",
     )
@@ -412,16 +414,20 @@ async def _run_top_remote(url: str, *, interval: float) -> None:
     fd = _start_keyreader(loop, _on_key)
     try:
         async with httpx.AsyncClient(base_url=url, timeout=5.0) as client:
+            server_version = ""
             with Live(
                 Panel(f"connecting to {url} ..."), console=console, screen=True, auto_refresh=False
             ) as live:
                 while not stop.is_set():
                     if not paused["on"]:
                         try:
+                            if not server_version:  # learn the remote's version once
+                                health = (await client.get("/health")).json()
+                                server_version = str(health.get("version", ""))
                             status = (await client.get("/status")).raise_for_status().json()
                             body = (await client.get("/events")).raise_for_status().json()
                             renderable: RenderableType = _render_remote(
-                                status, body.get("events", [])
+                                status, body.get("events", []), server_version
                             )
                         except Exception as exc:
                             renderable = Panel(
