@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from spero.alerting.base import Alerter
 from spero.api.supervisor import Supervisor
 from spero.core.engine import ActionStatus
 from spero.core.models import Policy, RemediationSpec, TargetPolicy
@@ -63,14 +64,18 @@ def latest_policy_order(orders: list[dict]) -> str | None:
 
 
 async def swap_supervisor(
-    sup: Supervisor, policy_yaml: str, approver: RemoteApprover
+    sup: Supervisor,
+    policy_yaml: str,
+    approver: RemoteApprover,
+    *,
+    alerter: Alerter | None = None,
 ) -> Supervisor:
     """Hot-swap the running supervisor to a pushed policy.
 
     Validates the YAML, stops the old supervisor, starts a new one on the same
-    RemoteApprover so approvals keep flowing, and returns it. If the policy is
-    invalid the current supervisor is left running and returned unchanged, so a
-    bad push from the owner can never take the agent down.
+    RemoteApprover and alert channel so approvals and alerts keep flowing, and
+    returns it. If the policy is invalid the current supervisor is left running and
+    returned unchanged, so a bad push from the owner can never take the agent down.
     """
     from spero.core.policy import load_policy_str
 
@@ -80,7 +85,7 @@ async def swap_supervisor(
         log.warning("ignoring invalid pushed policy: %s", exc)
         return sup
     await sup.stop()
-    new_sup = Supervisor(policy, approver=approver.approve, approver_name="owner")
+    new_sup = Supervisor(policy, approver=approver.approve, approver_name="owner", alerter=alerter)
     await new_sup.start()
     log.info("hot-swapped policy: now supervising %d target(s)", len(policy.targets))
     return new_sup
@@ -99,8 +104,12 @@ async def run_agent(
 
     import httpx
 
+    from spero.alerting import make_alerter
+    from spero.config import settings
+
     approver = RemoteApprover()
-    sup = Supervisor(policy, approver=approver.approve, approver_name="owner")
+    alerter = make_alerter(settings)  # Slack/webhook/email from config, else NullAlerter
+    sup = Supervisor(policy, approver=approver.approve, approver_name="owner", alerter=alerter)
     await sup.start()
 
     headers = {"Authorization": f"Bearer {token}"} if token else None
@@ -124,7 +133,7 @@ async def run_agent(
                         approver.apply_orders(orders)  # approve orders into the gate
                         pushed = latest_policy_order(orders)  # policy orders restart the sup
                         if pushed is not None:
-                            sup = await swap_supervisor(sup, pushed, approver)
+                            sup = await swap_supervisor(sup, pushed, approver, alerter=alerter)
                 except httpx.HTTPError:
                     pass  # owner unreachable: keep supervising, retry next tick
                 # One-shot: forget approvals whose action has applied.
