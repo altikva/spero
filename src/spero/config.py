@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8800
     log_level: str = "INFO"
+    # Bearer tokens for the HTTP surfaces. Empty = auth disabled (fine for a
+    # localhost `serve`); set them to require `Authorization: Bearer <token>`.
+    # `api_token` guards `spero serve`; `owner_token` guards `spero owner` and is
+    # the one `spero agent` sends when it dials home.
+    api_token: str = ""
+    owner_token: str = ""
 
 
 settings = Settings()
