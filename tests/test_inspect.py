@@ -57,6 +57,9 @@ async def test_object_yaml_lookuperror_for_host_target() -> None:
         ("pod", {"selector": "app=x"}, ["-l", "app=x"]),
         ("resource-usage", {"selector": "app=x"}, ["-l", "app=x"]),
         ("knative-service", {"name": "x"}, ["-l", "serving.knative.dev/service=x"]),
+        ("restart-count", {"selector": "app=x"}, ["-l", "app=x"]),
+        ("elpio-service", {"name": "x"}, ["-l", "serving.knative.dev/service=x"]),
+        ("elpio-task", {"name": "x"}, ["-l", "elpio.io/service=x"]),
     ],
 )
 def test_pod_ref(ptype: str, params: dict, expected: list[str]) -> None:
@@ -68,7 +71,7 @@ def test_pod_ref(ptype: str, params: dict, expected: list[str]) -> None:
     [
         ("systemd", {"unit": "nginx.service"}),  # host probe: no pods
         ("keda-scaledobject", {"name": "x"}),  # CRD: backing workload not addressable here
-        ("elpio-service", {"name": "x"}),
+        ("elpio-function", {"name": "x"}),  # a build; the produced service is supervised separately
     ],
 )
 def test_probes_without_pod_ref(ptype: str, params: dict) -> None:
