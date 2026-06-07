@@ -60,7 +60,7 @@ async def run_agent(
     import httpx
 
     approver = RemoteApprover()
-    sup = Supervisor(policy, approver=approver.approve)
+    sup = Supervisor(policy, approver=approver.approve, approver_name="owner")
     await sup.start()
 
     headers = {"Authorization": f"Bearer {token}"} if token else None

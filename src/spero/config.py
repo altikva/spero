@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # the one `spero agent` sends when it dials home.
     api_token: str = ""
     owner_token: str = ""
+    # When true, scrub likely secrets/PII from event text before `spero ask` /
+    # `spero diagnose` send it to the LLM (best-effort; see ai/redact.py).
+    redact_events: bool = False
 
 
 settings = Settings()

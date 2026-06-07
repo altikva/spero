@@ -30,12 +30,20 @@ class EmailAlerter(Alerter):
         recipients: Sequence[str],
         port: int = 25,
         subject_prefix: str = "[spero]",
+        use_tls: bool = False,
+        username: str | None = None,
+        password: str | None = None,
     ) -> None:
         self.host = host
         self.port = port
         self.sender = sender
         self.recipients = list(recipients)
         self.subject_prefix = subject_prefix
+        # Enterprise relays want STARTTLS + login; a local relay (port 25) wants
+        # neither, so both stay opt-in and default off to preserve old behavior.
+        self.use_tls = use_tls
+        self.username = username
+        self.password = password
 
     async def fire(self, target: str, detail: str) -> None:
         await self._send(f"ALERT {target}", f"{target} is unhealthy: {detail}")
@@ -53,4 +61,8 @@ class EmailAlerter(Alerter):
 
     def _send_sync(self, msg: EmailMessage) -> None:
         with smtplib.SMTP(self.host, self.port) as smtp:
+            if self.use_tls:
+                smtp.starttls()
+            if self.username is not None and self.password is not None:
+                smtp.login(self.username, self.password)
             smtp.send_message(msg)

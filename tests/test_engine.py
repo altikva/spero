@@ -64,6 +64,23 @@ async def test_auto_remediation_applies() -> None:
     assert outcome.action is not None
     assert outcome.action.status is ActionStatus.applied
     assert ["systemctl", "restart", "nginx.service"] in provider.commands
+    # The audit trail attributes an auto action to the policy.
+    rem = [e for e in engine.events if e.kind == "remediation"]
+    assert rem and "[auto (policy)]" in rem[-1].detail
+
+
+async def test_applied_action_attributes_the_approver() -> None:
+    provider = ScriptedProvider(systemd_handler(active=False, restart_ok=True))
+
+    async def approve(_t: object, _s: object) -> bool:
+        return True
+
+    engine = _engine(
+        _policy(autonomy="gated", max_attempts=1), provider, approver=approve, approver_name="ops"
+    )
+    await engine.run_cycle()
+    rem = [e for e in engine.events if e.kind == "remediation"]
+    assert rem and "approved by ops" in rem[-1].detail
 
 
 async def test_gated_waits_for_approval_by_default() -> None:
