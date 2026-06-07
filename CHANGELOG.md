@@ -14,6 +14,46 @@ All notable changes to Spero are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-07
+
+A security-hardening and observability release from a full code audit.
+
+### Added
+
+- **Control-plane authentication**: an optional bearer token guards every `serve`
+  and `owner` route except `/health` (set `SPERO_API_TOKEN` / `SPERO_OWNER_TOKEN`;
+  empty means auth is off, the localhost default). The agent sends the owner token
+  when it dials home; `spero top --remote --token` reaches a guarded worker. A
+  default-deny-ingress NetworkPolicy and an optional token Secret ship in the base
+  manifests.
+- **`/metrics`**: a Prometheus endpoint on `serve` (per-target health and failure
+  counts, the freeze flag).
+- **Live log follow**: `GET /logs/{target}/stream` streams `kubectl logs -f` over
+  SSE, and `spero top` gains a `L` follow view (local and over `--remote`).
+- **Rightsizing remediation** `patch-requests`: raises/lowers a deployment's
+  resource requests; destructive, so it is always gated, closing the loop the
+  `resource-usage` probe opens.
+- **More probes**: `restart-count` (CrashLoopBackOff / OOMKilled / restart
+  threshold), `pvc` (bind health), and `cert-expiry` (TLS secret expiry, via the
+  optional `certs` extra).
+- **More alert channels**: `WebhookAlerter` and `SlackAlerter`, selected from
+  config by `make_alerter` and wired into `run` / `watch` / `serve`. EmailAlerter
+  gained STARTTLS and SMTP login.
+- **Policy push**: the owner can ship a new policy to a running agent over the
+  dial-home order channel; the agent validates and hot-swaps its supervisor.
+- **Logs / exec / inspect on elpio targets** via probe `pod_ref()`.
+- **Secret redaction**: `SPERO_REDACT_EVENTS` scrubs likely secrets from event
+  text before `ask` / `diagnose` send it to the LLM.
+
+### Changed
+
+- Applied actions are attributed in the audit trail (`auto (policy)` or
+  `approved by <human|ai|owner>`).
+- The rich dashboard moved out of `cli.py` into `spero/dashboard.py`, and shared
+  banner / status / column constants into `spero/ui.py`.
+- The owner endpoints are now async so concurrent agent reports serialize without
+  a lock; `/logs?tail=N` is clamped to a safe maximum.
+
 ## [0.3.0] - 2026-06-07
 
 ### Added
@@ -112,6 +152,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **CLI** — `status`, `run`, `watch`, `heal`, `ask`, `diagnose`, `forecast`, `serve`.
 - **Control plane** — FastAPI app with `/health` and `/targets`.
 
+[0.4.0]: https://github.com/altikva/spero/releases/tag/v0.4.0
 [0.3.0]: https://github.com/altikva/spero/releases/tag/v0.3.0
 [0.2.0]: https://github.com/altikva/spero/releases/tag/v0.2.0
 [0.1.0]: https://github.com/altikva/spero/releases/tag/v0.1.0
