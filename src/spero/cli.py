@@ -69,8 +69,23 @@ _EXAMPLES = (
 )
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"spero {__version__}")
+        raise typer.Exit()
+
+
 @app.callback(invoke_without_command=True)
-def _root(ctx: typer.Context) -> None:
+def _root(
+    ctx: typer.Context,
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the version and exit.",
+    ),
+) -> None:
     # Every invocation gets the banner as a header (like `cgh`). Bare `spero` then
     # greets with the full landing screen and exits 0, rather than Typer's default
     # "Missing command" usage error.
@@ -229,6 +244,9 @@ def top(
     With --remote, poll another spero's /status and /events (its `spero serve`) and
     render those instead of probing locally. Otherwise uses the Textual UI (mouse,
     selection, scrollback) when the ``tui`` extra is installed, else a rich.Live fallback.
+
+    With the ``tui`` extra: ``i`` inspects a target's YAML, ``l`` tails its pod logs,
+    and ``s`` shells into its pod with your own kubectl (local only, never --remote).
     """
     if remote:
         url = remote.rstrip("/")

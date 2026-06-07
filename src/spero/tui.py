@@ -101,6 +101,8 @@ class SperoTopApp(App[None]):
         Binding("a", "approve", "approve selected"),
         Binding("f", "freeze", "toggle freeze"),
         Binding("i", "inspect", "inspect yaml"),
+        Binding("l", "logs", "logs"),
+        Binding("s", "shell", "shell into pod"),
     ]
 
     def __init__(self, policy: Policy, *, interval: float, store: bool) -> None:
@@ -234,13 +236,22 @@ class SperoTopApp(App[None]):
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         self._open_inspect(str(event.row_key.value))
 
+    def _selected(self) -> str | None:
+        table = self.query_one("#targets", DataTable)
+        if not table.row_count:
+            return None
+        return str(table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value)
+
+    def _target(self, name: str) -> TargetPolicy | None:
+        return next((t for t in self.policy.targets if t.name == name), None)
+
     def _open_inspect(self, name: str) -> None:
         self.run_worker(self._inspect(name), exclusive=False, group="inspect")
 
     async def _inspect(self, name: str) -> None:
         from spero.core.inspect import object_yaml
 
-        target = next((t for t in self.policy.targets if t.name == name), None)
+        target = self._target(name)
         if target is None:
             return
         try:
@@ -250,6 +261,56 @@ class SperoTopApp(App[None]):
         except Exception as exc:
             text = f"# error fetching {name}:\n# {exc}"
         self.push_screen(InspectScreen(name, text))
+
+    def action_logs(self) -> None:
+        name = self._selected()
+        if name is not None:
+            self.run_worker(self._logs(name), exclusive=False, group="logs")
+
+    async def _logs(self, name: str) -> None:
+        from spero.core.inspect import object_logs
+
+        target = self._target(name)
+        if target is None:
+            return
+        try:
+            text = await object_logs(target)
+        except LookupError as exc:
+            text = f"# {exc}"
+        except Exception as exc:
+            text = f"# error fetching logs for {name}:\n# {exc}"
+        self.push_screen(InspectScreen(f"logs: {name}", text))
+
+    def action_shell(self) -> None:
+        name = self._selected()
+        if name is not None:
+            self.run_worker(self._shell(name), exclusive=False, group="shell")
+
+    async def _shell(self, name: str) -> None:
+        """Local convenience: shell into the target's pod with your own kubectl."""
+        import subprocess
+
+        from spero.core.shell import exec_argv
+
+        target = self._target(name)
+        if target is None:
+            return
+        try:
+            argv = await exec_argv(target)
+        except LookupError as exc:
+            self.notify(str(exc), severity="warning")
+            return
+        except Exception as exc:
+            self.notify(f"exec setup failed: {exc}", severity="error")
+            return
+        with self.suspend():
+            try:
+                # argv is the local kubectl prefix + the probe's pod ref (no shell string).
+                subprocess.run(argv)
+            except (OSError, subprocess.SubprocessError) as exc:
+                # The terminal is restored under suspend(), so a plain print is correct here.
+                print(f"exec failed: {exc}")
+        self.notify(f"left shell on {name}")
 
 
 def _event_style(kind: str) -> str:
@@ -284,6 +345,7 @@ class SperoRemoteApp(App[None]):
         Binding("r", "refresh", "refresh"),
         Binding("p", "pause", "pause"),
         Binding("i", "inspect", "inspect yaml"),
+        Binding("l", "logs", "logs"),
     ]
 
     def __init__(self, url: str, *, interval: float) -> None:
@@ -424,6 +486,26 @@ class SperoRemoteApp(App[None]):
         except Exception as exc:
             text = f"# error fetching {name}:\n# {exc}"
         self.push_screen(InspectScreen(name, text))
+
+    def action_logs(self) -> None:
+        table = self.query_one("#targets", DataTable)
+        if table.row_count:
+            name = str(table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value)
+            self.run_worker(self._fetch_logs(name), exclusive=False, group="logs")
+
+    async def _fetch_logs(self, name: str) -> None:
+        if self._client is None:
+            return
+        try:
+            resp = await self._client.get(f"/logs/{name}")
+            text = (
+                resp.json().get("logs", "")
+                if resp.status_code == 200
+                else (f"# {name}: HTTP {resp.status_code}\n# {resp.text}")
+            )
+        except Exception as exc:
+            text = f"# error fetching logs for {name}:\n# {exc}"
+        self.push_screen(InspectScreen(f"logs: {name}", text))
 
 
 def run_remote_app(url: str, *, interval: float) -> None:

@@ -50,6 +50,11 @@ class KnativeServiceProbe(Probe):
     def object_ref(self) -> list[str]:
         return ["ksvc", self.name]
 
+    def pod_ref(self) -> list[str]:
+        # Knative labels each serving pod with its service name; the revision pods
+        # are what carry the user container's logs.
+        return ["-l", f"serving.knative.dev/service={self.name}"]
+
     async def check(self, provider: Provider) -> ProbeResult:
         r = await provider.run(["get", "ksvc", self.name, "-o", "json"], timeout=30)
         if not r.ok:
