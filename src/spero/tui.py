@@ -110,7 +110,7 @@ class SperoTopApp(App[None]):
         super().__init__()
         self.policy = policy
         self.interval = interval
-        self.engine = Engine(policy, approver=self._approve)
+        self.engine = Engine(policy, approver=self._approve, approver_name="human")
         self.store_engine = _make_store_engine() if store else None
         self.paused = False
         self.approved: set[str] = set()
