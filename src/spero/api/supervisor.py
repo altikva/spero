@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
+from spero.alerting.base import Alerter
 from spero.core.engine import Approver as ApproverType
 from spero.core.engine import Engine, TargetOutcome, deny_all
 from spero.core.models import Policy, TargetPolicy
@@ -37,9 +38,12 @@ class Supervisor:
         store_engine: object | None = None,
         approver: ApproverType = deny_all,
         approver_name: str = "approver",
+        alerter: Alerter | None = None,
     ) -> None:
         self.policy = policy
-        self.engine = Engine(policy, approver=approver, approver_name=approver_name)
+        self.engine = Engine(
+            policy, approver=approver, approver_name=approver_name, alerter=alerter
+        )
         self.store_engine = store_engine
         self.latest: dict[str, TargetOutcome] = {}
         self._stop = asyncio.Event()
