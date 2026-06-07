@@ -67,6 +67,10 @@ knobs below.
 
 ## Quickstart
 
+Bare `spero` greets with a branded landing screen and the command list:
+
+![the spero command-line landing screen](assets/spero-cli.svg)
+
 ```bash
 spero status                       # show targets from the active policy
 spero run                          # run one supervision cycle (gated actions wait for a human)
@@ -80,6 +84,10 @@ spero forecast disk-root           # predictive: when a disk crosses a threshold
 spero serve                        # run the control-plane API on :8800
 spero --version
 ```
+
+A single `spero run` cycle reports each target's health and the action taken:
+
+![spero run cycle output](assets/spero-run.svg)
 
 ## Control plane and dashboards
 
@@ -99,7 +107,9 @@ the `tui` extra it is a full Textual UI (mouse, scrollback, command palette); wi
 it, a rich.Live fallback. Keys: `a` approve a gated action, `f` toggle the freeze,
 `i` inspect YAML, `l` tail logs, `L` follow logs, `s` shell into a pod (local, your
 kubectl). `spero top --remote http://host:port` observes a running worker over the
-endpoints above instead of probing locally.
+endpoints above instead of probing locally:
+
+![spero top --remote observing a worker](assets/spero-top-remote.svg)
 
 Every route except `/health` is guarded by a bearer token when `SPERO_API_TOKEN`
 is set (empty means auth off, the localhost default); pass it to an observer with
