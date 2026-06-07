@@ -88,3 +88,37 @@ async def test_object_logs_lookuperror_without_pods() -> None:
     )
     with pytest.raises(LookupError):
         await object_logs(target)
+
+
+def test_stream_argv_for_k8s_deployment() -> None:
+    from spero.core.inspect import _stream_argv
+
+    target = TargetPolicy(
+        name="orders",
+        provider="k8s:/orders",
+        probe=ProbeSpec(type="deployment", params={"name": "orders"}),
+    )
+    assert _stream_argv(target, tail=50) == [
+        "kubectl",
+        "-n",
+        "orders",
+        "logs",
+        "deployment/orders",
+        "-f",
+        "--tail",
+        "50",
+        "--all-containers=true",
+        "--prefix=true",
+    ]
+
+
+def test_stream_argv_rejects_non_streamable_target() -> None:
+    from spero.core.inspect import _stream_argv
+
+    target = TargetPolicy(
+        name="nginx",
+        provider="local",
+        probe=ProbeSpec(type="systemd", params={"unit": "nginx.service"}),
+    )
+    with pytest.raises(LookupError):
+        _stream_argv(target)

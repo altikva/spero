@@ -19,6 +19,7 @@ model a remote owner observes (see `spero top --remote`).
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 
 from spero.core.engine import Approver as ApproverType
 from spero.core.engine import Engine, TargetOutcome, deny_all
@@ -108,6 +109,45 @@ class Supervisor:
 
         return await object_logs(self._target(name), tail=tail)
 
+    def stream_logs(self, name: str, *, tail: int = 200) -> AsyncIterator[str]:
+        """A live ``kubectl logs -f`` stream for the named target's pods.
+
+        Validates eagerly (KeyError unknown target, LookupError no streamable pods)
+        so the caller maps errors to HTTP before the stream opens; the returned async
+        iterator yields lines until cancelled.
+        """
+        from spero.core.inspect import _stream_argv, stream_logs
+
+        target = self._target(name)
+        _stream_argv(target, tail=tail)  # raise now if not streamable
+        return stream_logs(target, tail=tail)
+
+    def metrics(self) -> str:
+        """Prometheus text-format metrics built from the latest per-target state."""
+        lines = [
+            "# HELP spero_up 1 if the supervisor is running",
+            "# TYPE spero_up gauge",
+            "spero_up 1",
+            "# HELP spero_frozen 1 if the global action freeze is on",
+            "# TYPE spero_frozen gauge",
+            f"spero_frozen {int(self.policy.frozen)}",
+            "# HELP spero_target_healthy 1 healthy, 0 unhealthy",
+            "# TYPE spero_target_healthy gauge",
+        ]
+        for t in self.policy.targets:
+            o = self.latest.get(t.name)
+            if o is not None:
+                lines.append(f'spero_target_healthy{{target="{_esc(t.name)}"}} {int(o.healthy)}')
+        lines += [
+            "# HELP spero_target_failures consecutive probe failures",
+            "# TYPE spero_target_failures gauge",
+        ]
+        for t in self.policy.targets:
+            o = self.latest.get(t.name)
+            failures = o.failures if o is not None else 0
+            lines.append(f'spero_target_failures{{target="{_esc(t.name)}"}} {failures}')
+        return "\n".join(lines) + "\n"
+
     def _target(self, name: str) -> TargetPolicy:
         target = next((t for t in self.policy.targets if t.name == name), None)
         if target is None:
@@ -127,6 +167,11 @@ class Supervisor:
         return [
             {"node": e.node, "target": e.target, "kind": e.kind, "detail": e.detail} for e in rows
         ]
+
+
+def _esc(value: str) -> str:
+    """Escape a Prometheus label value (backslash, double-quote, newline)."""
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
 def _action_dict(o: TargetOutcome) -> dict[str, str] | None:

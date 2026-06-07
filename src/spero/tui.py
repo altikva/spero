@@ -18,6 +18,7 @@ target is the one ``a`` approves.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar
 
@@ -26,6 +27,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, RichLog, Static, TextArea
+from textual.worker import Worker
 
 from spero import __version__
 from spero.core.engine import ActionStatus, Engine
@@ -72,6 +74,51 @@ class InspectScreen(ModalScreen[None]):
         self.dismiss()
 
 
+class FollowScreen(ModalScreen[None]):
+    """A live, scrolling `kubectl logs -f` follow (q / esc to close).
+
+    Takes a ``source`` callable returning an async iterator of log lines (local via
+    core.inspect.stream_logs, remote via the /logs/{name}/stream SSE endpoint). The
+    pump worker is cancelled on close so the underlying stream is torn down.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "close", "close"),
+        Binding("q", "close", "close"),
+    ]
+    CSS = """
+    FollowScreen { align: center middle; }
+    FollowScreen RichLog { width: 90%; height: 90%; border: round $accent; }
+    """
+
+    def __init__(self, title: str, source: Callable[[], AsyncIterator[str]]) -> None:
+        super().__init__()
+        self._title = title
+        self._source = source
+        self._worker: Worker[None] | None = None
+
+    def compose(self) -> ComposeResult:
+        log = RichLog(highlight=False, markup=False, wrap=True)
+        log.border_title = f" {self._title} "
+        yield log
+
+    def on_mount(self) -> None:
+        self._worker = self.run_worker(self._pump(), exclusive=True, group="follow")
+
+    async def _pump(self) -> None:
+        log = self.query_one(RichLog)
+        try:
+            async for line in self._source():
+                log.write(line)
+        except Exception as exc:  # surface the failure in the pane, do not crash the app
+            log.write(f"[error] {exc}")
+
+    def action_close(self) -> None:
+        if self._worker is not None:
+            self._worker.cancel()
+        self.dismiss()
+
+
 class SperoTopApp(App[None]):
     """Live supervision dashboard with selection, mouse, and scrollback."""
 
@@ -87,6 +134,7 @@ class SperoTopApp(App[None]):
         Binding("f", "freeze", "toggle freeze"),
         Binding("i", "inspect", "inspect yaml"),
         Binding("l", "logs", "logs"),
+        Binding("L", "follow", "follow logs"),
         Binding("s", "shell", "shell into pod"),
     ]
 
@@ -298,6 +346,15 @@ class SperoTopApp(App[None]):
                 print(f"exec failed: {exc}")
         self.notify(f"left shell on {name}")
 
+    def action_follow(self) -> None:
+        name = self._selected()
+        target = self._target(name) if name is not None else None
+        if name is None or target is None:
+            return
+        from spero.core.inspect import stream_logs
+
+        self.push_screen(FollowScreen(f"logs -f: {name}", lambda: stream_logs(target)))
+
 
 def _make_store_engine() -> object:
     from spero.config import settings
@@ -326,6 +383,7 @@ class SperoRemoteApp(App[None]):
         Binding("p", "pause", "pause"),
         Binding("i", "inspect", "inspect yaml"),
         Binding("l", "logs", "logs"),
+        Binding("L", "follow", "follow logs"),
     ]
 
     def __init__(self, url: str, *, interval: float, token: str = "") -> None:
@@ -493,6 +551,25 @@ class SperoRemoteApp(App[None]):
         except Exception as exc:
             text = f"# error fetching logs for {name}:\n# {exc}"
         self.push_screen(InspectScreen(f"logs: {name}", text))
+
+    def action_follow(self) -> None:
+        table = self.query_one("#targets", DataTable)
+        if table.row_count:
+            name = str(table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value)
+            self.push_screen(
+                FollowScreen(f"logs -f: {name}", lambda: self._remote_log_stream(name))
+            )
+
+    async def _remote_log_stream(self, name: str) -> AsyncIterator[str]:
+        if self._client is None:
+            return
+        async with self._client.stream("GET", f"/logs/{name}/stream") as resp:
+            if resp.status_code != 200:
+                yield f"# {name}: HTTP {resp.status_code}"
+                return
+            async for raw in resp.aiter_lines():
+                if raw.startswith("data: "):
+                    yield raw[len("data: ") :]
 
 
 def run_remote_app(url: str, *, interval: float, token: str = "") -> None:
