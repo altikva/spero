@@ -68,8 +68,10 @@ filesystem.
 
 The Deployment runs `spero serve`, which supervises the cluster AND exposes its
 live state over HTTP on port 8800: `/status` (per-target health and the last
-action) and `/events` (recent probe and remediation events). It serves store-less,
-so nothing is written under the read-only root filesystem.
+action), `/events` (recent probe and remediation events), `/objects/{target}`
+(the target's object as YAML), and `/logs/{target}?tail=N` (the last N log lines
+of the target's pods). It serves store-less, so nothing is written under the
+read-only root filesystem.
 
 Watch it from your laptop by port-forwarding to the pod, then pointing a local
 spero at it:
@@ -81,8 +83,11 @@ spero top --remote http://localhost:8800
 
 `spero top --remote` polls those endpoints and renders the same dashboard, so you
 see what the in-cluster worker is supervising without running any probes yourself.
-This is the pull-based read model; the dial-home design below is the push-based
-version where the worker reaches out to a remote owner.
+With the `tui` extra, `i` inspects a target's YAML and `l` tails its pod logs over
+those same endpoints (the `s` shell convenience is local-only: it would need a TTY
+tunnel through the agent, which dial-home deliberately does not open). This is the
+pull-based read model; the dial-home design below is the push-based version where
+the worker reaches out to a remote owner.
 
 ## Dial-home (implemented)
 

@@ -14,6 +14,43 @@ All notable changes to Spero are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-06-07
+
+### Added
+
+- **In-cluster deployment**: a multi-stage `Dockerfile` (the spero package plus a
+  pinned kubectl, non-root uid 65532, read-only root filesystem) and Kustomize
+  manifests under `deploy/k8s/` — a supervise-only `base` (read RBAC) and an `acting`
+  overlay that adds exactly the mutating verbs spero needs plus leader-election leases.
+  RBAC is scoped to the resources the probes read.
+- **Remote observe**: `spero serve` now exposes its live state over HTTP
+  (`/status`, `/events`), and `spero top --remote <url>` renders that same dashboard
+  from your laptop without running any probes locally.
+- **Inspect and logs in `spero top`** (with the `tui` extra): `i` shows a target's
+  object as YAML and `l` tails its pod logs, both served over `/objects/{target}` and
+  `/logs/{target}` so they work locally and over `--remote`.
+- **Local shell convenience**: `s` in `spero top` shells into a target's pod with
+  your own kubectl (`kubectl exec -it`). Local only by design — it uses your
+  kubeconfig, not the agent's RBAC, and is never offered over `--remote` or dial-home.
+- **Dial-home**: `spero owner` runs a fleet service that in-cluster `spero agent`
+  workers dial out to; the agent supervises locally, reports status + events on a
+  timer, and a `RemoteApprover` lets the owner answer gated remediations. `auto`
+  actions still run unattended if the owner is unreachable.
+- **`knative-service` probe** (experimental): supervises a `serving.knative.dev`
+  Service by its rolled-up `Ready` condition.
+- **`--version` flag** on the root command (alongside the existing `spero version`).
+
+### Changed
+
+- The Textual `spero top` footer shows `ctrl+p` for the command palette instead of
+  the cryptic `^p`, and table cells render as literal text so paths/URLs are no longer
+  mis-underlined as links.
+
+### Fixed
+
+- Aligned the elpio probes and the in-cluster RBAC to elpio v0.1.0's real CRD group
+  (`elpio.io`), verified against the live operator.
+
 ## [0.2.0] - 2026-06-05
 
 ### Added
@@ -75,5 +112,6 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **CLI** — `status`, `run`, `watch`, `heal`, `ask`, `diagnose`, `forecast`, `serve`.
 - **Control plane** — FastAPI app with `/health` and `/targets`.
 
+[0.3.0]: https://github.com/altikva/spero/releases/tag/v0.3.0
 [0.2.0]: https://github.com/altikva/spero/releases/tag/v0.2.0
 [0.1.0]: https://github.com/altikva/spero/releases/tag/v0.1.0

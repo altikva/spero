@@ -4,14 +4,15 @@
 # __copyright__ = "Copyright 2026 ALTIKVA."
 # __licence__ = "MIT & CC BY-NC-SA (https://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-# Description: Fetch the YAML of the object a target supervises (k9s-style inspect).
+# Description: Fetch the YAML and recent logs of the object a target supervises (k9s-style).
 
-"""Inspect a target's underlying object as YAML.
+"""Inspect a target's underlying object as YAML, and tail its pod logs.
 
-A target's probe declares what it watches via ``Probe.object_ref()``; this runs
-``kubectl get <ref> -o yaml`` through the target's provider so `spero top` can show
-the live object on demand. Host / data-infra targets have no single k8s object and
-raise LookupError.
+A target's probe declares what it watches via ``Probe.object_ref()`` (the object to
+show as YAML) and ``Probe.pod_ref()`` (the pods to read logs from). Both run
+``kubectl`` through the target's provider so `spero top` can show the live object or
+its logs on demand. Host / data-infra targets have no single k8s object and raise
+LookupError; CRD targets without addressable pods raise it for logs.
 """
 
 from __future__ import annotations
@@ -32,3 +33,27 @@ async def object_yaml(target: TargetPolicy) -> str:
     if not r.ok:
         raise RuntimeError(r.stderr.strip() or "kubectl get failed")
     return r.stdout
+
+
+async def object_logs(target: TargetPolicy, *, tail: int = 200) -> str:
+    """Return the last ``tail`` log lines of the target's pod(s).
+
+    Snapshot, not a follow: a single ``kubectl logs --tail`` over the probe's
+    ``pod_ref()``, prefixed per pod/container so multi-pod selectors stay readable.
+    Raises LookupError when the target has no pods (host / CRD probes) and
+    RuntimeError when kubectl fails (e.g. no pod currently matches the selector).
+    """
+    from spero.probes import build_probe
+    from spero.providers.host import make_provider
+
+    ref = build_probe(target.probe).pod_ref()
+    if ref is None:
+        raise LookupError(f"{target.name}: probe {target.probe.type!r} has no streamable logs")
+    provider = make_provider(target.provider)
+    r = await provider.run(
+        ["logs", *ref, "--tail", str(tail), "--all-containers=true", "--prefix=true"],
+        timeout=30,
+    )
+    if not r.ok:
+        raise RuntimeError(r.stderr.strip() or "kubectl logs failed")
+    return r.stdout or "# (no log output)"
