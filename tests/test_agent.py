@@ -107,6 +107,21 @@ async def test_swap_supervisor_hot_swaps_policy() -> None:
         await new_sup.stop()
 
 
+async def test_swap_supervisor_threads_the_alerter() -> None:
+    from spero.alerting.base import NullAlerter
+
+    ap = RemoteApprover()
+    alerter = NullAlerter()
+    sup = Supervisor(load_policy_str(_POLICY_A), approver=ap.approve, approver_name="owner")
+    await sup.start()
+    try:
+        new_sup = await swap_supervisor(sup, _POLICY_B, ap, alerter=alerter)
+        # The pushed supervisor keeps the agent's alert channel.
+        assert new_sup.engine.alerter is alerter
+    finally:
+        await new_sup.stop()
+
+
 async def test_swap_supervisor_keeps_running_on_invalid_policy() -> None:
     ap = RemoteApprover()
     sup = Supervisor(load_policy_str(_POLICY_A), approver=ap.approve, approver_name="owner")
