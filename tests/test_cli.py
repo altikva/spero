@@ -83,6 +83,7 @@ def test_top_dashboard_render() -> None:
         console.print(_render_top(policy, outcomes, events))
     out = cap.get()
     assert "spero top" in out
+    assert f"v{__version__}" in out  # version shown in the header
     assert "nginx" in out
     assert "restart:applied" in out
     assert "recent events" in out
@@ -164,9 +165,10 @@ def test_render_remote_from_json() -> None:
     events = [{"target": "orders", "kind": "probe_fail", "detail": "autoscaling paused"}]
     console = Console(width=120)
     with console.capture() as cap:
-        console.print(_render_remote(status, events))
+        console.print(_render_remote(status, events, server_version="9.9.9"))
     out = cap.get()
     assert "remote" in out
+    assert "server v9.9.9" in out  # the observed spero's version
     assert "orders" in out
     assert "DOWN" in out
     assert "keda-unpause:awaiting_approval" in out
