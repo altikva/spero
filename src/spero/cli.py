@@ -32,6 +32,7 @@ from spero.ai import (
     parse_pct,
 )
 from spero.ai.llm import LLMClient
+from spero.alerting import make_alerter
 from spero.config import settings
 from spero.core.engine import ActionStatus, Engine, TargetOutcome, deny_all
 from spero.core.models import Autonomy, RemediationSpec, TargetPolicy
@@ -137,7 +138,12 @@ async def _run_once(policy_obj: object, *, ai_approve: bool, store: bool) -> Non
 
     assert isinstance(policy_obj, Policy)
     approver = AIApprover(_llm()).approve if ai_approve else deny_all
-    engine = Engine(policy_obj, approver=approver, approver_name="ai" if ai_approve else "human")
+    engine = Engine(
+        policy_obj,
+        approver=approver,
+        approver_name="ai" if ai_approve else "human",
+        alerter=make_alerter(settings),
+    )
     outcomes = await engine.run_cycle()
     _render_outcomes(outcomes)
     if store:
@@ -165,7 +171,12 @@ async def _run_watch(policy_obj: object, *, ai_approve: bool, store: bool) -> No
 
     assert isinstance(policy_obj, Policy)
     approver = AIApprover(_llm()).approve if ai_approve else deny_all
-    engine = Engine(policy_obj, approver=approver, approver_name="ai" if ai_approve else "human")
+    engine = Engine(
+        policy_obj,
+        approver=approver,
+        approver_name="ai" if ai_approve else "human",
+        alerter=make_alerter(settings),
+    )
     store_engine = _store_engine() if store else None
 
     stop = asyncio.Event()
@@ -365,7 +376,8 @@ def serve(
     if supervise:
         from spero.api.supervisor import Supervisor
 
-        sup = Supervisor(load_policy(policy))  # store-less: events stay in memory
+        # store-less: events stay in memory; alert channel from config (Null if unset)
+        sup = Supervisor(load_policy(policy), alerter=make_alerter(settings))
     uvicorn.run(create_app(supervisor=sup), host=host, port=port)
 
 
