@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     # When true, scrub likely secrets/PII from event text before `spero ask` /
     # `spero diagnose` send it to the LLM (best-effort; see ai/redact.py).
     redact_events: bool = False
+    # Alert channels. Empty = that channel is disabled. `slack_webhook_url` wins
+    # over `alert_webhook_url` when both are set (see alerting.make_alerter); with
+    # neither set, alerting falls back to NullAlerter.
+    alert_webhook_url: str = ""
+    slack_webhook_url: str = ""
 
 
 settings = Settings()
