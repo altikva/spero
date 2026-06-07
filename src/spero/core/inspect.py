@@ -17,6 +17,9 @@ LookupError; CRD targets without addressable pods raise it for logs.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+
 from spero.core.models import TargetPolicy
 
 
@@ -57,3 +60,54 @@ async def object_logs(target: TargetPolicy, *, tail: int = 200) -> str:
     if not r.ok:
         raise RuntimeError(r.stderr.strip() or "kubectl logs failed")
     return r.stdout or "# (no log output)"
+
+
+def _stream_argv(target: TargetPolicy, *, tail: int = 200) -> list[str]:
+    """Build the ``kubectl logs -f`` argv for a target's pods (k8s-only).
+
+    Raises LookupError when the target is not a kubernetes workload with pods, so
+    the caller can map it to an HTTP status before any streaming starts.
+    """
+    from spero.probes import build_probe
+    from spero.providers.host import make_provider
+    from spero.providers.kubernetes import KubernetesProvider
+
+    provider = make_provider(target.provider)
+    if not isinstance(provider, KubernetesProvider):
+        raise LookupError(f"{target.name}: log streaming is only available for kubernetes targets")
+    ref = build_probe(target.probe).pod_ref()
+    if ref is None:
+        raise LookupError(f"{target.name}: probe {target.probe.type!r} has no streamable logs")
+    return [
+        *provider.prefix(),
+        "logs",
+        *ref,
+        "-f",
+        "--tail",
+        str(tail),
+        "--all-containers=true",
+        "--prefix=true",
+    ]
+
+
+async def stream_logs(target: TargetPolicy, *, tail: int = 200) -> AsyncIterator[str]:
+    """Yield log lines from ``kubectl logs -f`` for a target's pods until cancelled.
+
+    A live follow (unlike the one-shot ``object_logs`` snapshot). The kubectl child
+    is killed and reaped when the consumer stops iterating or is cancelled.
+    """
+    argv = _stream_argv(target, tail=tail)
+    proc = await asyncio.create_subprocess_exec(
+        *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+    )
+    assert proc.stdout is not None
+    try:
+        while True:
+            line = await proc.stdout.readline()
+            if not line:  # process ended (pod gone, kubectl exited)
+                break
+            yield line.decode(errors="replace").rstrip("\n")
+    finally:
+        if proc.returncode is None:
+            proc.kill()
+            await proc.wait()

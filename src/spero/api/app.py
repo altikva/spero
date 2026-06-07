@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import ValidationError
 
 from spero import __version__
@@ -110,6 +111,30 @@ def create_app(settings: Settings | None = None, supervisor: Supervisor | None =
             raise HTTPException(503, "not supervising; run `spero serve`")
         tail = max(1, min(tail, _MAX_LOG_TAIL))  # bound the tail; reject non-positive
         return await _kubectl_result(supervisor.object_logs(name, tail=tail), name, "logs")
+
+    @app.get("/logs/{name}/stream", dependencies=[auth])
+    async def logs_stream(name: str, tail: int = 200) -> StreamingResponse:
+        if supervisor is None:
+            raise HTTPException(503, "not supervising; run `spero serve`")
+        tail = max(1, min(tail, _MAX_LOG_TAIL))
+        try:
+            agen = supervisor.stream_logs(name, tail=tail)  # validates eagerly
+        except KeyError:
+            raise HTTPException(404, f"unknown target: {name}") from None
+        except LookupError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+        async def sse() -> AsyncIterator[str]:
+            async for line in agen:
+                yield f"data: {line}\n\n"
+
+        return StreamingResponse(sse(), media_type="text/event-stream")
+
+    @app.get("/metrics", dependencies=[auth])
+    def metrics() -> PlainTextResponse:
+        if supervisor is None:
+            raise HTTPException(503, "not supervising; run `spero serve`")
+        return PlainTextResponse(supervisor.metrics())
 
     @app.get("/targets", dependencies=[auth])
     def targets() -> dict[str, object]:
