@@ -20,10 +20,13 @@ agent keeps supervising, runs `auto` remediations, and queues `gated` ones.
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from spero.api.supervisor import Supervisor
 from spero.core.engine import ActionStatus
 from spero.core.models import Policy, RemediationSpec, TargetPolicy
+
+log = logging.getLogger(__name__)
 
 
 class RemoteApprover:
@@ -44,6 +47,43 @@ class RemoteApprover:
         for order in orders:
             if order.get("type") == "approve" and order.get("target"):
                 self.approved.add(str(order["target"]))
+
+
+def latest_policy_order(orders: list[dict]) -> str | None:
+    """Return the policy YAML from the last ``policy`` order, or None.
+
+    The owner queues orders in arrival order, so the last policy order wins: an
+    agent that fell behind and pulls several at once converges on the newest one.
+    """
+    yaml_text: str | None = None
+    for order in orders:
+        if order.get("type") == "policy" and order.get("policy") is not None:
+            yaml_text = str(order["policy"])
+    return yaml_text
+
+
+async def swap_supervisor(
+    sup: Supervisor, policy_yaml: str, approver: RemoteApprover
+) -> Supervisor:
+    """Hot-swap the running supervisor to a pushed policy.
+
+    Validates the YAML, stops the old supervisor, starts a new one on the same
+    RemoteApprover so approvals keep flowing, and returns it. If the policy is
+    invalid the current supervisor is left running and returned unchanged, so a
+    bad push from the owner can never take the agent down.
+    """
+    from spero.core.policy import load_policy_str
+
+    try:
+        policy = load_policy_str(policy_yaml)
+    except Exception as exc:  # invalid push: keep supervising on the old policy
+        log.warning("ignoring invalid pushed policy: %s", exc)
+        return sup
+    await sup.stop()
+    new_sup = Supervisor(policy, approver=approver.approve, approver_name="owner")
+    await new_sup.start()
+    log.info("hot-swapped policy: now supervising %d target(s)", len(policy.targets))
+    return new_sup
 
 
 async def run_agent(
@@ -80,7 +120,11 @@ async def run_agent(
                 try:
                     resp = await client.post(f"/agents/{agent_id}/report", json=payload)
                     if resp.status_code == 200:
-                        approver.apply_orders(resp.json().get("orders", []))
+                        orders = resp.json().get("orders", [])
+                        approver.apply_orders(orders)  # approve orders into the gate
+                        pushed = latest_policy_order(orders)  # policy orders restart the sup
+                        if pushed is not None:
+                            sup = await swap_supervisor(sup, pushed, approver)
                 except httpx.HTTPError:
                     pass  # owner unreachable: keep supervising, retry next tick
                 # One-shot: forget approvals whose action has applied.
