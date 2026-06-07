@@ -49,6 +49,12 @@ class ElpioServiceProbe(Probe):
     def object_ref(self) -> list[str]:
         return ["elpioservice.elpio.io", self.name]
 
+    def pod_ref(self) -> list[str]:
+        # Knative-engine pods (the default engine) carry this label; a KEDA-engine
+        # ElpioService labels its pods elpio.io/service=<name> instead, so logs/exec
+        # surface the knative case and degrade gracefully for the KEDA one.
+        return ["-l", f"serving.knative.dev/service={self.name}"]
+
     async def check(self, provider: Provider) -> ProbeResult:
         r = await provider.run(
             ["get", "elpioservice.elpio.io", self.name, "-o", "json"], timeout=30
@@ -116,6 +122,10 @@ class ElpioTaskProbe(Probe):
 
     def object_ref(self) -> list[str]:
         return ["elpiotask.elpio.io", self.name]
+
+    def pod_ref(self) -> list[str]:
+        # The task's KEDA-backed dispatcher pods carry elpio's canonical service label.
+        return ["-l", f"elpio.io/service={self.name}"]
 
     async def check(self, provider: Provider) -> ProbeResult:
         r = await provider.run(["get", "elpiotask.elpio.io", self.name, "-o", "json"], timeout=30)
