@@ -14,7 +14,12 @@ from spero.core.models import RemediationSpec
 from spero.remediations.base import Remediation, RemediationResult
 from spero.remediations.host import KillProcess, RespawnProcess, RestartService, RotateLogs
 from spero.remediations.keda import UnpauseScaledObject  # EXPERIMENTAL: elpio serverless seam spike
-from spero.remediations.kubernetes import DeletePod, RolloutRestart, ScaleDeployment
+from spero.remediations.kubernetes import (
+    DeletePod,
+    PatchRequests,
+    RolloutRestart,
+    ScaleDeployment,
+)
 
 REMEDIATIONS: dict[str, type[Remediation]] = {
     cls.type: cls
@@ -26,6 +31,7 @@ REMEDIATIONS: dict[str, type[Remediation]] = {
         RolloutRestart,
         ScaleDeployment,
         DeletePod,
+        PatchRequests,
         UnpauseScaledObject,
     )
 }
@@ -49,6 +55,7 @@ __all__ = [
     "REMEDIATIONS",
     "DeletePod",
     "KillProcess",
+    "PatchRequests",
     "Remediation",
     "RemediationResult",
     "RespawnProcess",

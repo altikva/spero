@@ -51,6 +51,46 @@ class ScaleDeployment(Remediation):
         )
 
 
+class PatchRequests(Remediation):
+    """`kubectl set resources deployment/<name> --requests=...` -- rightsizing.
+
+    Closes the loop the ``resource-usage`` probe opens: when a pod runs hot against
+    its declared requests, raise (or lower) them. Marked destructive because it
+    mutates the workload spec and triggers a rolling restart, so it may never run
+    unattended -- autonomy ``auto`` is rejected at policy load, and a human or the
+    AI approver always gates it. At least one of ``cpu``/``memory`` is required.
+    """
+
+    type: ClassVar[str] = "patch-requests"
+    destructive: ClassVar[bool] = True
+
+    def __init__(
+        self,
+        deployment: str,
+        cpu: str | None = None,
+        memory: str | None = None,
+        container: str | None = None,
+    ) -> None:
+        if not cpu and not memory:
+            raise ValueError("patch-requests needs at least one of cpu/memory")
+        self.deployment = deployment
+        self.cpu = str(cpu) if cpu else None
+        self.memory = str(memory) if memory else None
+        self.container = container
+
+    async def apply(self, provider: Provider) -> RemediationResult:
+        requests = ",".join(
+            f"{k}={v}" for k, v in (("cpu", self.cpu), ("memory", self.memory)) if v
+        )
+        cmd = ["set", "resources", f"deployment/{self.deployment}", f"--requests={requests}"]
+        if self.container:
+            cmd += ["-c", self.container]
+        r = await provider.run(cmd, timeout=60)
+        return RemediationResult(
+            r.ok, r.stderr.strip() or f"set requests {requests} on {self.deployment}"
+        )
+
+
 class DeletePod(Remediation):
     """`kubectl delete pod -l <selector>` -- forceful; let the controller recreate."""
 
