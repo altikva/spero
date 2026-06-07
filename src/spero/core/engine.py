@@ -77,11 +77,15 @@ class Engine:
         *,
         provider_factory: ProviderFactory = make_provider,
         approver: Approver = deny_all,
+        approver_name: str = "approver",
         alerter: Alerter | None = None,
     ) -> None:
         self.policy = policy
         self.provider_factory = provider_factory
         self.approver = approver
+        # Label for the audit trail: who authorizes gated actions on this engine
+        # (e.g. "human", "ai", "owner"). `auto` actions are attributed to the policy.
+        self.approver_name = approver_name
         self.alerter = alerter or NullAlerter()
         self._failures: dict[str, int] = {}
         self._open_alerts: set[str] = set()
@@ -181,7 +185,12 @@ class Engine:
             return ActionOutcome(spec.type, ActionStatus.awaiting_approval)
 
         res = await build_remediation(spec).apply(provider)
-        self._record(node, target.name, "remediation", f"{spec.type}: {res.detail}")
+        actor = (
+            "auto (policy)"
+            if spec.autonomy is Autonomy.auto
+            else f"approved by {self.approver_name}"
+        )
+        self._record(node, target.name, "remediation", f"{spec.type}: {res.detail} [{actor}]")
         if res.success:
             # Acted: clear the counter so we don't re-fire every cycle while the
             # target takes time to come back. A genuinely still-broken target will

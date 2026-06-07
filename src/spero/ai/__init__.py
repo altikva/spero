@@ -18,6 +18,7 @@ from spero.ai.diagnose import diagnose_failure, incident_summary
 from spero.ai.llm import AnthropicLLM, LLMClient, NullLLM
 from spero.ai.predict import detect_flapping, forecast_threshold_crossing, parse_pct
 from spero.ai.query import nl_query
+from spero.ai.redact import redact
 
 __all__ = [
     "AIApprover",
@@ -30,4 +31,5 @@ __all__ = [
     "incident_summary",
     "nl_query",
     "parse_pct",
+    "redact",
 ]

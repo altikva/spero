@@ -158,7 +158,7 @@ async def _run_once(policy_obj: object, *, ai_approve: bool, store: bool) -> Non
 
     assert isinstance(policy_obj, Policy)
     approver = AIApprover(_llm()).approve if ai_approve else deny_all
-    engine = Engine(policy_obj, approver=approver)
+    engine = Engine(policy_obj, approver=approver, approver_name="ai" if ai_approve else "human")
     outcomes = await engine.run_cycle()
     _render_outcomes(outcomes)
     if store:
@@ -186,7 +186,7 @@ async def _run_watch(policy_obj: object, *, ai_approve: bool, store: bool) -> No
 
     assert isinstance(policy_obj, Policy)
     approver = AIApprover(_llm()).approve if ai_approve else deny_all
-    engine = Engine(policy_obj, approver=approver)
+    engine = Engine(policy_obj, approver=approver, approver_name="ai" if ai_approve else "human")
     store_engine = _store_engine() if store else None
 
     stop = asyncio.Event()
@@ -503,7 +503,7 @@ async def _run_top(policy_obj: object, *, interval: float, store: bool) -> None:
     async def _approve(target: TargetPolicy, spec: RemediationSpec) -> bool:
         return target.name in state.approved
 
-    engine = Engine(policy_obj, approver=_approve)
+    engine = Engine(policy_obj, approver=_approve, approver_name="human")
 
     stop = asyncio.Event()
     wake = asyncio.Event()  # any keypress wakes the loop so the UI reacts promptly
@@ -602,7 +602,7 @@ def diagnose(target: str = typer.Argument(..., help="Target to diagnose.")) -> N
     if not events:
         console.print(f"[dim]no recorded events for {target}[/]")
         return
-    detail = next((e.detail for e in events if e.kind == "probe_fail"), events[0].detail)
+    detail = _redact(next((e.detail for e in events if e.kind == "probe_fail"), events[0].detail))
     recent = [_format_event(e) for e in reversed(events[:20])]  # oldest-last
     console.print(asyncio.run(diagnose_failure(target, detail, recent, _llm())))
 
@@ -771,7 +771,17 @@ def _events(*, target: str | None = None, limit: int = 200) -> list[Event]:
 
 def _format_event(e: Event) -> str:
     when = e.created_at.strftime("%Y-%m-%d %H:%M") if e.created_at else "?"
-    return f"{when} {e.kind} {e.target}: {e.detail}"
+    detail = _redact(e.detail)
+    return f"{when} {e.kind} {e.target}: {detail}"
+
+
+def _redact(text: str) -> str:
+    """Scrub secrets before text leaves for the LLM, when SPERO_REDACT_EVENTS is on."""
+    if not settings.redact_events:
+        return text
+    from spero.ai import redact
+
+    return redact(text)
 
 
 def _render_outcomes(outcomes: list[TargetOutcome]) -> None:

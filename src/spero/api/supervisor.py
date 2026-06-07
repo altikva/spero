@@ -35,9 +35,10 @@ class Supervisor:
         *,
         store_engine: object | None = None,
         approver: ApproverType = deny_all,
+        approver_name: str = "approver",
     ) -> None:
         self.policy = policy
-        self.engine = Engine(policy, approver=approver)
+        self.engine = Engine(policy, approver=approver, approver_name=approver_name)
         self.store_engine = store_engine
         self.latest: dict[str, TargetOutcome] = {}
         self._stop = asyncio.Event()

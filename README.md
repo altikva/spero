@@ -66,6 +66,17 @@ spero ask "what flapped today?"    # natural-language query over the event histo
 spero serve                        # run the control-plane API on :8800
 ```
 
+## Data egress and privacy
+
+With `ANTHROPIC_API_KEY` set, `spero ask`, `spero diagnose`, and `--ai-approve`
+send text to Anthropic's API: the question, target names, remediation params, and
+recorded event details (which can include command output). Event details are also
+stored in the local sqlite database. With no key, spero uses the `NullLLM` fallback
+and nothing leaves the host. To scrub likely secrets/PII from event text before it
+is sent to the model, set `SPERO_REDACT_EVENTS=1` (best-effort; see
+`src/spero/ai/redact.py`). The control-plane endpoints that expose object YAML and
+pod logs are token-guarded; see `deploy/k8s/README.md`.
+
 ## From source
 
 ```bash
