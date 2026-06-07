@@ -43,6 +43,8 @@ dependencies = [
 [project.optional-dependencies]
 # Phase 2 — Kubernetes provider
 k8s = ["kubernetes>=31.0"]
+# X.509 parsing for the cert-expiry probe (imported lazily so it stays optional)
+certs = ["cryptography>=42"]
 # Phase 3 — AI layer: predictive, root-cause, NL interface
 ai = ["anthropic>=0.69", "rank-bm25>=0.2"]
 # Phase 3 — expose Spero to agents over MCP

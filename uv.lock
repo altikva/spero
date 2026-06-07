@@ -2994,6 +2994,9 @@ ai = [
     { name = "anthropic" },
     { name = "rank-bm25" },
 ]
+certs = [
+    { name = "cryptography" },
+]
 dev = [
     { name = "coverage", extra = ["toml"] },
     { name = "mypy" },
@@ -3021,6 +3024,7 @@ requires-dist = [
     { name = "asyncssh", specifier = ">=2.20" },
     { name = "coverage", extras = ["toml"], marker = "extra == 'dev'", specifier = ">=7.5" },
     { name = "cryptography", specifier = ">=42.0" },
+    { name = "cryptography", marker = "extra == 'certs'", specifier = ">=42" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=2.8,<3" },
     { name = "httpx", specifier = ">=0.27" },
@@ -3043,7 +3047,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
     { name = "watchdog", specifier = ">=5.0" },
 ]
-provides-extras = ["k8s", "ai", "mcp", "tui", "dev"]
+provides-extras = ["k8s", "certs", "ai", "mcp", "tui", "dev"]
 
 [[package]]
 name = "sqlalchemy"
