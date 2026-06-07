@@ -27,6 +27,7 @@ from textual.binding import Binding, BindingType
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, RichLog, Static, TextArea
 
+from spero import __version__
 from spero.core.engine import ActionStatus, Engine
 from spero.core.models import Policy, RemediationSpec, TargetPolicy
 
@@ -196,7 +197,8 @@ class SperoTopApp(App[None]):
             flags.append("[yellow]PAUSED[/]")
         flag = ("  " + "  ".join(flags)) if flags else ""
         self.query_one("#status", Static).update(
-            f"[bold cyan]spero top[/]  {len(self.policy.targets)} target(s){flag}"
+            f"[bold cyan]spero top[/] [dim]v{__version__}[/]"
+            f"  {len(self.policy.targets)} target(s){flag}"
             f"  [dim]{datetime.now():%H:%M:%S}[/]"
         )
 
@@ -356,6 +358,7 @@ class SperoRemoteApp(App[None]):
         self._client: httpx.AsyncClient | None = None
         self._cols: list = []
         self._rows: set[str] = set()
+        self._server_version = ""  # the observed spero's version, from /health
 
     def compose(self) -> ComposeResult:
         yield Static(_BANNER, id="banner")
@@ -380,6 +383,9 @@ class SperoRemoteApp(App[None]):
         if self.paused or self._client is None:
             return
         try:
+            if not self._server_version:  # learn the remote's version once
+                health = (await self._client.get("/health")).json()
+                self._server_version = str(health.get("version", ""))
             status = (await self._client.get("/status")).raise_for_status().json()
             body = (await self._client.get("/events")).raise_for_status().json()
         except Exception as exc:
@@ -444,8 +450,9 @@ class SperoRemoteApp(App[None]):
             tag += "  [yellow]FROZEN[/]"
         if not connected:
             tag += f"  [red]unreachable: {error}[/]"
+        ver = f" [dim]server v{self._server_version}[/]" if self._server_version else ""
         self.query_one("#status", Static).update(
-            f"[bold cyan]spero top[/] [dim]remote {self.url}[/]{tag}"
+            f"[bold cyan]spero top[/] [dim]remote {self.url}[/]{ver}{tag}"
             f"  [dim]{datetime.now():%H:%M:%S}[/]"
         )
 
