@@ -34,6 +34,10 @@ class Approve(BaseModel):
     target: str
 
 
+class PushPolicy(BaseModel):
+    policy: str
+
+
 @dataclass
 class AgentState:
     status: dict = field(default_factory=dict)
@@ -59,6 +63,11 @@ class AgentRegistry:
     def queue_approve(self, agent_id: str, target: str) -> None:
         self.agents.setdefault(agent_id, AgentState()).orders.append(
             {"type": "approve", "target": target}
+        )
+
+    def queue_policy(self, agent_id: str, policy_yaml: str) -> None:
+        self.agents.setdefault(agent_id, AgentState()).orders.append(
+            {"type": "policy", "policy": policy_yaml}
         )
 
     def fleet(self) -> list[dict]:
@@ -99,6 +108,17 @@ def create_owner_app(registry: AgentRegistry | None = None, *, token: str | None
     async def approve(agent_id: str, body: Approve) -> dict[str, str]:
         registry.queue_approve(agent_id, body.target)
         return {"queued": body.target}
+
+    @app.post("/agents/{agent_id}/policy", dependencies=[auth])
+    async def push_policy(agent_id: str, body: PushPolicy) -> dict[str, str]:
+        from spero.core.policy import load_policy_str
+
+        try:
+            load_policy_str(body.policy)
+        except Exception as exc:  # invalid YAML or policy: reject before queueing
+            raise HTTPException(422, f"invalid policy: {exc}") from exc
+        registry.queue_policy(agent_id, body.policy)
+        return {"queued": "policy"}
 
     @app.get("/agents", dependencies=[auth])
     async def agents() -> dict[str, object]:
