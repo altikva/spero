@@ -14,7 +14,10 @@ the KubernetesProvider supplies the kubectl/context/namespace prefix.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
+from datetime import UTC, datetime
 from typing import ClassVar
 
 from spero.probes.base import Probe, ProbeResult
@@ -78,6 +81,102 @@ class DeploymentProbe(Probe):
         if desired == 0:  # intentionally scaled to zero: nothing wanted, nothing missing
             return ProbeResult(True, f"{self.name}: scaled to 0 (no replicas desired)")
         return ProbeResult(available >= desired, f"{self.name}: {available}/{desired} available")
+
+
+class PvcProbe(Probe):
+    """Healthy iff the PersistentVolumeClaim ``name`` is ``Bound``.
+
+    This checks bind health only: a claim is healthy once it has bound to a
+    PersistentVolume and the storage is provisioned. True PVC *usage* (how full
+    the mounted filesystem is) needs kubelet volume stats, which kubectl does not
+    expose, so disk-fill thresholds on a PVC are future work, handled by a
+    metrics-backed probe rather than this one. The detail names the phase and,
+    when the status exposes it, the bound capacity.
+    """
+
+    type: ClassVar[str] = "pvc"
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def object_ref(self) -> list[str]:
+        return ["pvc", self.name]
+
+    async def check(self, provider: Provider) -> ProbeResult:
+        r = await provider.run(["get", "pvc", self.name, "-o", "json"], timeout=30)
+        if not r.ok:
+            return ProbeResult(False, f"kubectl get pvc failed: {r.stderr.strip()}")
+        try:
+            status = json.loads(r.stdout).get("status", {})
+        except json.JSONDecodeError as exc:
+            return ProbeResult(False, f"could not parse kubectl json: {exc}")
+
+        phase = status.get("phase", "Unknown") or "Unknown"
+        capacity = ""
+        cap = status.get("capacity")
+        if isinstance(cap, dict) and cap.get("storage"):
+            capacity = f", capacity {cap['storage']}"
+        return ProbeResult(phase == "Bound", f"{self.name}: {phase}{capacity}")
+
+
+class CertExpiryProbe(Probe):
+    """Unhealthy if the X.509 cert in a TLS ``Secret`` expires within ``days``.
+
+    Reads ``data[key]`` (default ``tls.crt``) from the named Secret, base64-decodes
+    it, and parses the leaf certificate's ``notAfter`` with the ``cryptography``
+    library. Reports unhealthy when the certificate expires within ``days`` (or has
+    already expired). The detail names the days remaining. ``cryptography`` is
+    imported lazily so the dependency stays optional: without it the probe returns
+    a clear pointer to the ``certs`` extra rather than crashing.
+    """
+
+    type: ClassVar[str] = "cert-expiry"
+
+    def __init__(self, secret: str, days: int = 14, key: str = "tls.crt") -> None:
+        if int(days) < 0:
+            raise ValueError("days must be >= 0")
+        self.secret = secret
+        self.days = int(days)
+        self.key = key
+
+    def object_ref(self) -> list[str]:
+        return ["secret", self.secret]
+
+    async def check(self, provider: Provider) -> ProbeResult:
+        try:
+            from cryptography import x509
+        except ImportError:
+            return ProbeResult(
+                False, "cert-expiry needs the 'certs' extra: pip install spero[certs]"
+            )
+
+        r = await provider.run(["get", "secret", self.secret, "-o", "json"], timeout=30)
+        if not r.ok:
+            return ProbeResult(False, f"kubectl get secret failed: {r.stderr.strip()}")
+        try:
+            data = json.loads(r.stdout).get("data", {})
+        except json.JSONDecodeError as exc:
+            return ProbeResult(False, f"could not parse kubectl json: {exc}")
+        if not isinstance(data, dict) or self.key not in data:
+            return ProbeResult(False, f"{self.secret}: no data[{self.key!r}] in secret")
+
+        try:
+            pem = base64.b64decode(data[self.key], validate=True)
+        except (binascii.Error, ValueError) as exc:
+            return ProbeResult(False, f"{self.secret}: could not base64-decode {self.key!r}: {exc}")
+        try:
+            cert = x509.load_pem_x509_certificate(pem)
+        except ValueError as exc:
+            return ProbeResult(False, f"{self.secret}: could not parse certificate: {exc}")
+
+        not_after = cert.not_valid_after_utc
+        remaining = (not_after - datetime.now(UTC)).days
+        if remaining < 0:
+            return ProbeResult(False, f"{self.secret}: certificate expired {-remaining}d ago")
+        healthy = remaining >= self.days
+        return ProbeResult(
+            healthy, f"{self.secret}: {remaining}d until expiry (need >= {self.days})"
+        )
 
 
 class RestartCountProbe(Probe):
