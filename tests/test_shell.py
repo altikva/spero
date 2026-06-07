@@ -13,7 +13,33 @@ from __future__ import annotations
 import pytest
 
 from spero.core.models import ProbeSpec, TargetPolicy
-from spero.core.shell import exec_argv
+from spero.core.shell import _resolve_pod, exec_argv
+from spero.providers.command import CommandResult
+
+
+class _FakeProvider:
+    """Minimal provider double for exercising _resolve_pod without a cluster."""
+
+    def __init__(self, stdout: str) -> None:
+        self._stdout = stdout
+
+    async def run(self, command: object, *, timeout: float | None = None) -> CommandResult:
+        return CommandResult(0, self._stdout, "")
+
+
+async def test_resolve_pod_direct_resource_skips_lookup() -> None:
+    # A <kind>/<name> ref is exec'able as-is; no kubectl call needed.
+    assert await _resolve_pod(_FakeProvider(""), ["deployment/orders"]) == "deployment/orders"
+
+
+async def test_resolve_pod_selector_picks_first_running_pod() -> None:
+    pod = await _resolve_pod(_FakeProvider("orders-7d9-abc"), ["-l", "app=orders"])
+    assert pod == "pod/orders-7d9-abc"
+
+
+async def test_resolve_pod_selector_no_match_raises() -> None:
+    with pytest.raises(LookupError):
+        await _resolve_pod(_FakeProvider("   "), ["-l", "app=none"])
 
 
 async def test_exec_argv_for_deployment_target() -> None:

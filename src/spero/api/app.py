@@ -14,7 +14,7 @@ and testable. Phase 1 adds the resource routers (nodes, events, targets, heal).
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
@@ -30,6 +30,23 @@ from spero.core.policy import load_policy
 
 # Upper bound for `kubectl logs --tail`, so a caller cannot request an enormous tail.
 _MAX_LOG_TAIL = 5000
+
+
+async def _kubectl_result(coro: Awaitable[str], name: str, key: str) -> dict[str, str]:
+    """Await a supervisor inspect/logs call and map its errors to HTTP status codes.
+
+    KeyError -> 404 (unknown target), LookupError -> 422 (target has no such
+    object), RuntimeError -> 502 (kubectl itself failed).
+    """
+    try:
+        return {key: await coro}
+    except KeyError:
+        raise HTTPException(404, f"unknown target: {name}") from None
+    except LookupError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(502, f"kubectl error: {exc}") from exc
+
 
 if TYPE_CHECKING:
     from spero.api.supervisor import Supervisor
@@ -85,28 +102,14 @@ def create_app(settings: Settings | None = None, supervisor: Supervisor | None =
     async def object_yaml(name: str) -> dict[str, str]:
         if supervisor is None:
             raise HTTPException(503, "not supervising; run `spero serve`")
-        try:
-            return {"yaml": await supervisor.object_yaml(name)}
-        except KeyError:
-            raise HTTPException(404, f"unknown target: {name}") from None
-        except LookupError as exc:
-            raise HTTPException(422, str(exc)) from exc
-        except RuntimeError as exc:
-            raise HTTPException(502, f"kubectl error: {exc}") from exc
+        return await _kubectl_result(supervisor.object_yaml(name), name, "yaml")
 
     @app.get("/logs/{name}", dependencies=[auth])
     async def object_logs(name: str, tail: int = 200) -> dict[str, str]:
         if supervisor is None:
             raise HTTPException(503, "not supervising; run `spero serve`")
         tail = max(1, min(tail, _MAX_LOG_TAIL))  # bound the tail; reject non-positive
-        try:
-            return {"logs": await supervisor.object_logs(name, tail=tail)}
-        except KeyError:
-            raise HTTPException(404, f"unknown target: {name}") from None
-        except LookupError as exc:
-            raise HTTPException(422, str(exc)) from exc
-        except RuntimeError as exc:
-            raise HTTPException(502, f"kubectl error: {exc}") from exc
+        return await _kubectl_result(supervisor.object_logs(name, tail=tail), name, "logs")
 
     @app.get("/targets", dependencies=[auth])
     def targets() -> dict[str, object]:

@@ -14,13 +14,10 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import Any
 
 import questionary
 import typer
-from rich.console import Console, Group, RenderableType
+from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from sqlalchemy import Engine as SAEngine
@@ -43,21 +40,13 @@ from spero.probes import build_probe
 from spero.providers.host import make_provider
 from spero.remediations import build_remediation
 from spero.store import Event, init_db, make_engine, recent_events
+from spero.ui import BANNER, STATUS_STYLE
 
 app = typer.Typer(add_completion=False, help="Spero - self-healing supervision agent.")
 console = Console()
 # Banner header goes to stderr so stdout stays clean for piping/parsing
 # (e.g. `spero version`, table/JSON output), while still showing in a terminal.
 err_console = Console(stderr=True)
-
-# figlet "Standard" font, matching cgh's banner style. Static so it adds no dependency.
-_BANNER = r"""
- ___ _ __   ___ _ __ ___
-/ __| '_ \ / _ \ '__/ _ \
-\__ \ |_) |  __/ | | (_) |
-|___/ .__/ \___|_|  \___/
-    |_|
-"""
 
 _EXAMPLES = (
     "[cyan]spero status[/]                 show targets from the active policy\n"
@@ -90,25 +79,15 @@ def _root(
     # greets with the full landing screen and exits 0, rather than Typer's default
     # "Missing command" usage error.
     if ctx.invoked_subcommand is not None:
-        err_console.print(_BANNER, style="bold cyan")  # header before the subcommand's output
+        err_console.print(BANNER, style="bold cyan")  # header before the subcommand's output
         return
-    console.print(_BANNER, style="bold cyan")
+    console.print(BANNER, style="bold cyan")
     console.print(
         f"  [bold]v{__version__}[/]  ---  Self-healing supervision agent for Linux and Kubernetes\n"
     )
     typer.echo(ctx.get_help())
     console.print(Panel(_EXAMPLES, title="Examples", border_style="dim", expand=False))
     raise typer.Exit()
-
-
-_STATUS_STYLE = {
-    ActionStatus.applied: "green",
-    ActionStatus.failed: "red",
-    ActionStatus.frozen: "yellow",
-    ActionStatus.suggested: "cyan",
-    ActionStatus.awaiting_approval: "magenta",
-    ActionStatus.waiting: "dim",
-}
 
 
 @app.command()
@@ -205,6 +184,12 @@ async def _run_watch(policy_obj: object, *, ai_approve: bool, store: bool) -> No
     console.print("[dim]stopped[/]")
 
 
+def _now() -> str:
+    from datetime import datetime
+
+    return datetime.now().strftime("%H:%M:%S")
+
+
 def _log_outcome(outcome: TargetOutcome) -> None:
     # Quiet on the happy path; a daemon should only speak when something matters.
     action = outcome.action
@@ -215,19 +200,13 @@ def _log_outcome(outcome: TargetOutcome) -> None:
     if not outcome.healthy:
         suffix = ""
         if action:
-            style = _STATUS_STYLE.get(action.status, "white")
+            style = STATUS_STYLE.get(action.status, "white")
             suffix = f" [{style}]{action.remediation}:{action.status.value}[/]"
         console.print(f"[dim]{when}[/] [red]{outcome.target} down[/]: {outcome.detail}{suffix}")
     elif action:
         console.print(
             f"[dim]{when}[/] [green]{outcome.target} ok[/] ({action.remediation} cleared)"
         )
-
-
-def _now() -> str:
-    from datetime import datetime
-
-    return datetime.now().strftime("%H:%M:%S")
 
 
 @app.command()
@@ -257,7 +236,9 @@ def top(
         try:
             from spero.tui import run_remote_app
         except ImportError:
-            asyncio.run(_run_top_remote(url, interval=interval, token=tok))  # rich.Live fallback
+            from spero.dashboard import run_top_remote  # rich.Live fallback
+
+            asyncio.run(run_top_remote(url, interval=interval, token=tok))
             return
         run_remote_app(url, interval=interval, token=tok)
         return
@@ -265,325 +246,11 @@ def top(
     try:
         from spero.tui import run_top_app
     except ImportError:
-        asyncio.run(_run_top(p, interval=interval, store=store))  # rich.Live fallback
+        from spero.dashboard import run_top  # rich.Live fallback
+
+        asyncio.run(run_top(p, interval=interval, store=store))
         return
     run_top_app(p, interval=interval, store=store)
-
-
-_TOP_KEYS = (
-    "[bold]q[/] quit   [bold]p[/] pause   [bold]r[/] refresh   "
-    "[bold]a[/] approve gated   [bold]f[/] toggle freeze"
-)
-
-
-def _render_top(
-    policy_obj: object,
-    outcomes: list[TargetOutcome],
-    events: list[Event],
-    paused: bool = False,
-) -> Group:
-    from spero.core.models import Policy
-
-    assert isinstance(policy_obj, Policy)
-    frozen = " [yellow](action freeze ON)[/]" if policy_obj.frozen else ""
-    pause_tag = " [yellow](paused)[/]" if paused else ""
-    header = Panel(
-        f"[bold cyan]spero top[/] [dim]v{__version__}[/]"
-        f"  {len(policy_obj.targets)} target(s){frozen}{pause_tag}"
-        f"  [dim]{_now()}[/]\n{_TOP_KEYS}",
-        border_style="cyan",
-    )
-
-    table = Table(expand=True)
-    table.add_column("Target", style="bold")
-    table.add_column("Provider")
-    table.add_column("Probe")
-    table.add_column("Health")
-    table.add_column("Fails", justify="right")
-    table.add_column("Action")
-    table.add_column("Detail", overflow="fold")
-    by_name = {o.target: o for o in outcomes}
-    for t in policy_obj.targets:
-        o = by_name.get(t.name)
-        if o is None:  # first paint, before the first cycle returns
-            table.add_row(t.name, t.provider, t.probe.type, "[dim]...[/]", "", "", "")
-            continue
-        health = "[green]healthy[/]" if o.healthy else "[red]DOWN[/]"
-        action = ""
-        if o.action is not None:
-            style = _STATUS_STYLE.get(o.action.status, "white")
-            action = f"[{style}]{o.action.remediation}:{o.action.status.value}[/]"
-        fails = str(o.failures) if o.failures else ""
-        table.add_row(t.name, t.provider, t.probe.type, health, fails, action, o.detail)
-
-    feed = (
-        "\n".join(
-            f"[dim]{e.target}[/] [{_event_style(e.kind)}]{e.kind}[/] {e.detail}"
-            for e in events[-12:]
-        )
-        or "[dim]no events yet[/]"
-    )
-    return Group(header, table, Panel(feed, title="recent events", border_style="dim"))
-
-
-def _event_style(kind: str) -> str:
-    return {"probe_fail": "red", "remediation": "yellow", "error": "red", "info": "green"}.get(
-        kind, "dim"
-    )
-
-
-def _render_remote(status: dict, events: list[dict], server_version: str = "") -> Group:
-    """Render the dashboard from a remote spero's /status + /events JSON."""
-    targets = status.get("targets") or []
-    frozen = " [yellow](action freeze ON)[/]" if status.get("frozen") else ""
-    ver = f" [dim]server v{server_version}[/]" if server_version else ""
-    header = Panel(
-        f"[bold cyan]spero top[/] [dim]remote[/]{ver}  {len(targets)} target(s){frozen}"
-        f"  [dim]{_now()}[/]",
-        border_style="cyan",
-    )
-    table = Table(expand=True)
-    table.add_column("Target", style="bold")
-    table.add_column("Provider")
-    table.add_column("Probe")
-    table.add_column("Health")
-    table.add_column("Fails", justify="right")
-    table.add_column("Action")
-    table.add_column("Detail", overflow="fold")
-    for t in targets:
-        healthy = t.get("healthy")
-        if healthy is None:
-            health = "[dim]...[/]"
-        else:
-            health = "[green]healthy[/]" if healthy else "[red]DOWN[/]"
-        action = ""
-        a = t.get("action")
-        if a:
-            try:
-                style = _STATUS_STYLE.get(ActionStatus(a["status"]), "white")
-            except ValueError:
-                style = "white"
-            action = f"[{style}]{a['remediation']}:{a['status']}[/]"
-        fails = str(t.get("failures") or "") if t.get("failures") else ""
-        table.add_row(
-            str(t.get("target", "")),
-            str(t.get("provider", "")),
-            str(t.get("probe", "")),
-            health,
-            fails,
-            action,
-            str(t.get("detail", "")),
-        )
-    feed = (
-        "\n".join(
-            f"[dim]{e.get('target', '')}[/] "
-            f"[{_event_style(e.get('kind', ''))}]{e.get('kind', '')}[/] {e.get('detail', '')}"
-            for e in events[-12:]
-        )
-        or "[dim]no events[/]"
-    )
-    return Group(header, table, Panel(feed, title="recent events", border_style="dim"))
-
-
-async def _run_top_remote(url: str, *, interval: float, token: str = "") -> None:
-    """Poll a remote spero's control plane and render its live state.
-
-    The rich.Live fallback for when the `tui` extra is absent. Keys: q quit, r
-    refresh now, p pause. (With the `tui` extra, `top --remote` uses the Textual
-    app instead, which adds mouse and scrollback.)
-    """
-    import signal
-
-    import httpx
-    from rich.live import Live
-
-    headers = {"Authorization": f"Bearer {token}"} if token else None
-
-    stop = asyncio.Event()
-    wake = asyncio.Event()
-    paused = {"on": False}  # boxed so the key handler can mutate it
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, stop.set)
-        except NotImplementedError:  # e.g. Windows
-            signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop.set))
-
-    def _on_key(ch: str) -> None:
-        c = ch.lower()
-        if c == "q":
-            stop.set()
-        elif c == "p":
-            paused["on"] = not paused["on"]
-        wake.set()  # r (or any key) wakes the loop to repaint/refetch
-
-    fd = _start_keyreader(loop, _on_key)
-    try:
-        async with httpx.AsyncClient(base_url=url, timeout=5.0, headers=headers) as client:
-            server_version = ""
-            with Live(
-                Panel(f"connecting to {url} ..."), console=console, screen=True, auto_refresh=False
-            ) as live:
-                while not stop.is_set():
-                    if not paused["on"]:
-                        try:
-                            if not server_version:  # learn the remote's version once
-                                health = (await client.get("/health")).json()
-                                server_version = str(health.get("version", ""))
-                            status = (await client.get("/status")).raise_for_status().json()
-                            body = (await client.get("/events")).raise_for_status().json()
-                            renderable: RenderableType = _render_remote(
-                                status, body.get("events", []), server_version
-                            )
-                        except Exception as exc:
-                            renderable = Panel(
-                                f"[red]cannot reach {url}[/]\n{exc}", border_style="red"
-                            )
-                        live.update(renderable, refresh=True)
-                    wake.clear()
-                    await _wait_first([stop, wake], timeout=interval)
-    finally:
-        _stop_keyreader(loop, fd)
-
-
-@dataclass
-class _TopState:
-    """Mutable dashboard state driven by single-key commands."""
-
-    paused: bool = False
-    quit: bool = False
-    approved: set[str] = field(default_factory=set)
-    outcomes: list[TargetOutcome] = field(default_factory=list)
-
-
-def _handle_key(key: str, state: _TopState, policy_obj: object) -> None:
-    """Apply one keypress to the dashboard state (pure; no terminal/engine I/O)."""
-    from spero.core.models import Policy
-
-    assert isinstance(policy_obj, Policy)
-    key = key.lower()
-    if key == "q":
-        state.quit = True
-    elif key == "p":
-        state.paused = not state.paused
-    elif key == "f":
-        policy_obj.frozen = not policy_obj.frozen
-    elif key == "a":
-        # Approve every target currently awaiting approval; the approver consults this
-        # set on the next cycle, so the gated remediation fires then.
-        state.approved |= {
-            o.target
-            for o in state.outcomes
-            if o.action is not None and o.action.status is ActionStatus.awaiting_approval
-        }
-
-
-async def _wait_first(events: list[asyncio.Event], timeout: float | None) -> None:
-    """Return when any event fires or the timeout elapses, cancelling the rest."""
-    tasks = [asyncio.ensure_future(e.wait()) for e in events]
-    try:
-        await asyncio.wait(tasks, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
-    finally:
-        for t in tasks:
-            t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-
-async def _run_top(policy_obj: object, *, interval: float, store: bool) -> None:
-    import signal
-
-    from rich.live import Live
-
-    from spero.core.models import Policy
-
-    assert isinstance(policy_obj, Policy)
-    state = _TopState()
-    store_engine = _store_engine() if store else None
-
-    async def _approve(target: TargetPolicy, spec: RemediationSpec) -> bool:
-        return target.name in state.approved
-
-    engine = Engine(policy_obj, approver=_approve, approver_name="human")
-
-    stop = asyncio.Event()
-    wake = asyncio.Event()  # any keypress wakes the loop so the UI reacts promptly
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, stop.set)
-        except NotImplementedError:  # e.g. Windows
-            signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop.set))
-
-    def _dispatch(ch: str) -> None:
-        _handle_key(ch, state, policy_obj)
-        wake.set()
-
-    fd = _start_keyreader(loop, _dispatch)
-    try:
-        initial: RenderableType = _render_top(policy_obj, [], [])
-        with Live(initial, console=console, screen=True, auto_refresh=False) as live:
-            while not state.quit and not stop.is_set():
-                if not state.paused:
-                    state.outcomes = await engine.run_cycle()
-                    # One-shot approvals: forget targets whose action just applied.
-                    state.approved -= {
-                        o.target
-                        for o in state.outcomes
-                        if o.action is not None and o.action.status is ActionStatus.applied
-                    }
-                    if store_engine is not None:
-                        await engine.persist(store_engine)
-                live.update(
-                    _render_top(policy_obj, state.outcomes, engine.events, state.paused),
-                    refresh=True,
-                )
-                wake.clear()
-                await _wait_first([stop, wake], timeout=None if state.paused else interval)
-    finally:
-        _stop_keyreader(loop, fd)
-
-
-def _start_keyreader(loop: asyncio.AbstractEventLoop, on_key: Callable[[str], None]) -> int | None:
-    """Put stdin in cbreak mode and dispatch single keys to ``on_key``. Returns the fd.
-
-    Returns None when stdin is not a TTY (piped / CI): the dashboard still auto-refreshes
-    and Ctrl-C still quits, there is just nothing to read keys from.
-    """
-    import sys
-
-    if not sys.stdin.isatty():
-        return None
-    import termios
-    import tty
-
-    fd = sys.stdin.fileno()
-    _KEYREADER_STATE[fd] = termios.tcgetattr(fd)
-    tty.setcbreak(fd)  # leaves ISIG on, so Ctrl-C still raises SIGINT
-
-    def _readable() -> None:
-        try:
-            data = os.read(fd, 1)
-        except OSError:
-            return
-        if data:
-            on_key(data.decode(errors="ignore"))
-
-    loop.add_reader(fd, _readable)
-    return fd
-
-
-def _stop_keyreader(loop: asyncio.AbstractEventLoop, fd: int | None) -> None:
-    if fd is None:
-        return
-    import termios
-
-    loop.remove_reader(fd)
-    old = _KEYREADER_STATE.pop(fd, None)
-    if old is not None:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
-
-
-_KEYREADER_STATE: dict[int, Any] = {}
 
 
 @app.command()
@@ -796,7 +463,7 @@ def _render_outcomes(outcomes: list[TargetOutcome]) -> None:
         if o.action is None:
             action = "-"
         else:
-            style = _STATUS_STYLE.get(o.action.status, "white")
+            style = STATUS_STYLE.get(o.action.status, "white")
             action = f"[{style}]{o.action.remediation}:{o.action.status.value}[/]"
         table.add_row(o.target, health, str(o.failures), action, o.detail)
     console.print(table)
