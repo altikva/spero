@@ -46,8 +46,14 @@ class RemoteApprover:
                 self.approved.add(str(order["target"]))
 
 
-async def run_agent(policy: Policy, *, owner_url: str, agent_id: str, interval: float) -> None:
-    """Supervise locally and report to the owner until interrupted."""
+async def run_agent(
+    policy: Policy, *, owner_url: str, agent_id: str, interval: float, token: str = ""
+) -> None:
+    """Supervise locally and report to the owner until interrupted.
+
+    ``token`` is sent as ``Authorization: Bearer <token>`` so the agent can dial
+    home to a token-guarded owner; empty means no auth header.
+    """
     import contextlib
     import signal
 
@@ -56,6 +62,8 @@ async def run_agent(policy: Policy, *, owner_url: str, agent_id: str, interval: 
     approver = RemoteApprover()
     sup = Supervisor(policy, approver=approver.approve)
     await sup.start()
+
+    headers = {"Authorization": f"Bearer {token}"} if token else None
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -66,7 +74,7 @@ async def run_agent(policy: Policy, *, owner_url: str, agent_id: str, interval: 
             signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop.set))
 
     try:
-        async with httpx.AsyncClient(base_url=owner_url, timeout=10.0) as client:
+        async with httpx.AsyncClient(base_url=owner_url, timeout=10.0, headers=headers) as client:
             while not stop.is_set():
                 payload = {"status": sup.status(), "events": sup.events()}
                 try:

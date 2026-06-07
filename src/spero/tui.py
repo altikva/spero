@@ -350,10 +350,11 @@ class SperoRemoteApp(App[None]):
         Binding("l", "logs", "logs"),
     ]
 
-    def __init__(self, url: str, *, interval: float) -> None:
+    def __init__(self, url: str, *, interval: float, token: str = "") -> None:
         super().__init__()
         self.url = url
         self.interval = interval
+        self.token = token
         self.paused = False
         self._client: httpx.AsyncClient | None = None
         self._cols: list = []
@@ -370,7 +371,8 @@ class SperoRemoteApp(App[None]):
     def on_mount(self) -> None:
         import httpx
 
-        self._client = httpx.AsyncClient(base_url=self.url, timeout=5.0)
+        headers = {"Authorization": f"Bearer {self.token}"} if self.token else None
+        self._client = httpx.AsyncClient(base_url=self.url, timeout=5.0, headers=headers)
         self._cols = self.query_one("#targets", DataTable).add_columns(*_COLUMNS)
         self._update_status(connected=True)
         self.set_interval(self.interval, self._tick)
@@ -515,6 +517,6 @@ class SperoRemoteApp(App[None]):
         self.push_screen(InspectScreen(f"logs: {name}", text))
 
 
-def run_remote_app(url: str, *, interval: float) -> None:
+def run_remote_app(url: str, *, interval: float, token: str = "") -> None:
     """Run the Textual remote dashboard against a spero control plane (blocking)."""
-    SperoRemoteApp(url, interval=interval).run()
+    SperoRemoteApp(url, interval=interval, token=token).run()

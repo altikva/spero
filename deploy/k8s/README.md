@@ -81,6 +81,26 @@ kubectl -n spero-system port-forward deploy/spero 8800:8800
 spero top --remote http://localhost:8800
 ```
 
+### Authentication
+
+`/status`, `/events`, `/objects`, and `/logs` carry sensitive data (object YAML,
+pod logs), so they are guarded by a bearer token when `SPERO_API_TOKEN` is set.
+The Deployment reads it from an optional `spero-secrets` Secret; create it to turn
+auth on:
+
+```
+kubectl -n spero-system create secret generic spero-secrets \
+  --from-literal=api-token="$(openssl rand -hex 32)"
+```
+
+Then pass the token to the observer: `spero top --remote http://localhost:8800 --token <token>`
+(or set `SPERO_API_TOKEN` in the observer's environment). `/health` stays open so
+the kubelet probe keeps working. With no Secret, auth is disabled and the
+NetworkPolicy below is the only ingress control. A `spero-deny-ingress`
+NetworkPolicy ships in the base: it blocks pod-to-pod access to :8800 while leaving
+kubelet probes and `kubectl port-forward` working. TLS is expected to terminate at
+an ingress in front of the service.
+
 `spero top --remote` polls those endpoints and renders the same dashboard, so you
 see what the in-cluster worker is supervising without running any probes yourself.
 With the `tui` extra, `i` inspects a target's YAML and `l` tails its pod logs over

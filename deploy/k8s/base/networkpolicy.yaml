@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: spero-deny-ingress
+  namespace: spero-system
+  labels:
+    app.kubernetes.io/name: spero
+    app.kubernetes.io/part-of: spero
+# Default-deny ingress to the supervisor pod. `serve` listens on :8800 (bound to
+# 0.0.0.0 so the kubelet readiness probe can reach it), which would otherwise be
+# reachable by every other pod in the cluster -- the lateral-movement risk behind
+# SEC-2. An empty `ingress` list with policyType Ingress denies all pod-to-pod
+# ingress to these pods.
+#
+# Two paths still work, by design:
+#   - kubelet health probes are host-sourced and not subject to pod NetworkPolicy
+#     on the common CNIs (Calico, Cilium), so /health keeps passing.
+#   - `kubectl port-forward` tunnels through the API server to the pod, not across
+#     the pod network, so observing via port-forward is unaffected.
+# The portable, CNI-independent protection for the sensitive endpoints is the
+# bearer token (SPERO_API_TOKEN); this policy is defense in depth on top of it.
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: spero
+  policyTypes:
+    - Ingress
+  ingress: []
