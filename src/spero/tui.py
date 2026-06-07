@@ -30,6 +30,10 @@ from textual.widgets import DataTable, Footer, RichLog, Static, TextArea
 from spero import __version__
 from spero.core.engine import ActionStatus, Engine
 from spero.core.models import Policy, RemediationSpec, TargetPolicy
+from spero.ui import BANNER as _BANNER
+from spero.ui import COLUMNS as _COLUMNS
+from spero.ui import STATUS_STYLE as _STATUS_STYLE
+from spero.ui import event_style as _event_style
 
 if TYPE_CHECKING:
     import httpx
@@ -40,26 +44,6 @@ _DASH_CSS = """
 #targets { height: 2fr; }
 #events { height: 1fr; border: round $panel-darken-1; padding: 0 1; }
 """
-
-# figlet "Standard" spero banner, shown at the top of the dashboard (the stderr
-# header is hidden once Textual takes the alternate screen).
-_BANNER = (
-    " ___ _ __   ___ _ __ ___\n"
-    "/ __| '_ \\ / _ \\ '__/ _ \\\n"
-    "\\__ \\ |_) |  __/ | | (_) |\n"
-    "|___/ .__/ \\___|_|  \\___/\n"
-    "    |_|"
-)
-
-_STATUS_STYLE = {
-    ActionStatus.applied: "green",
-    ActionStatus.failed: "red",
-    ActionStatus.frozen: "yellow",
-    ActionStatus.suggested: "cyan",
-    ActionStatus.awaiting_approval: "magenta",
-    ActionStatus.waiting: "dim",
-}
-_COLUMNS = ("Target", "Provider", "Probe", "Health", "Fails", "Action", "Detail")
 
 
 class InspectScreen(ModalScreen[None]):
@@ -313,12 +297,6 @@ class SperoTopApp(App[None]):
                 # The terminal is restored under suspend(), so a plain print is correct here.
                 print(f"exec failed: {exc}")
         self.notify(f"left shell on {name}")
-
-
-def _event_style(kind: str) -> str:
-    return {"probe_fail": "red", "remediation": "yellow", "error": "red", "info": "green"}.get(
-        kind, "dim"
-    )
 
 
 def _make_store_engine() -> object:
