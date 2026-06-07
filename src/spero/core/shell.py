@@ -22,7 +22,12 @@ a ``<kind>/<name>`` workload (e.g. ``deployment/x``) is passed to exec as-is.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from spero.core.models import TargetPolicy
+
+if TYPE_CHECKING:
+    from spero.providers.kubernetes import KubernetesProvider
 
 
 async def exec_argv(target: TargetPolicy, *, shell: str = "/bin/sh") -> list[str]:
@@ -45,12 +50,12 @@ async def exec_argv(target: TargetPolicy, *, shell: str = "/bin/sh") -> list[str
     return [*provider.prefix(), "exec", "-it", pod, "--", shell]
 
 
-async def _resolve_pod(provider: object, ref: list[str]) -> str:
+async def _resolve_pod(provider: KubernetesProvider, ref: list[str]) -> str:
     """A ``<kind>/<name>`` ref is exec'able directly; a ``-l`` selector resolves to
     the first running matching pod."""
     if ref and ref[0] != "-l":
         return ref[0]
-    r = await provider.run(  # type: ignore[attr-defined]
+    r = await provider.run(
         [
             "get",
             "pods",

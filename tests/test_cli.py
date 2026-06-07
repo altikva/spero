@@ -57,9 +57,9 @@ def test_top_dashboard_render() -> None:
     # data (no loop, no live terminal), so it is testable directly.
     from rich.console import Console
 
-    from spero.cli import _render_top
     from spero.core.engine import ActionOutcome, ActionStatus, TargetOutcome
     from spero.core.models import Policy, ProbeSpec, TargetPolicy
+    from spero.dashboard import _render_top
     from spero.store.models import Event
 
     policy = Policy(
@@ -91,9 +91,9 @@ def test_top_dashboard_render() -> None:
 
 def test_top_key_handler() -> None:
     # Pure single-key dispatch for `spero top`: pause, freeze, approve, quit.
-    from spero.cli import _handle_key, _TopState
     from spero.core.engine import ActionOutcome, ActionStatus, TargetOutcome
     from spero.core.models import Policy, ProbeSpec, TargetPolicy
+    from spero.dashboard import _handle_key, _TopState
 
     policy = Policy(
         targets=[
@@ -142,7 +142,7 @@ def test_render_remote_from_json() -> None:
     # `spero top --remote` renders purely from the /status + /events JSON.
     from rich.console import Console
 
-    from spero.cli import _render_remote
+    from spero.dashboard import _render_remote
 
     status = {
         "frozen": True,
