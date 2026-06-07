@@ -64,6 +64,17 @@ async def test_logs_opens_a_screen() -> None:
         await pilot.press("q")
 
 
+async def test_follow_opens_a_screen() -> None:
+    from spero.tui import FollowScreen, SperoTopApp
+
+    app = SperoTopApp(_policy(), interval=999, store=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.action_follow()  # host target is not streamable; the pane shows the error
+        await pilot.pause()
+        assert isinstance(app.screen, FollowScreen)
+
+
 async def test_remote_app_renders_from_fake_api() -> None:
     # SperoRemoteApp polls /status + /events; stub its httpx client so no network.
     import httpx

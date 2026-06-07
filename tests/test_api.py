@@ -120,6 +120,53 @@ def test_logs_404_and_422_with_supervisor() -> None:
     assert api.get("/logs/nginx").status_code == 422  # host probe has no pods
 
 
+def test_metrics_503_without_supervisor() -> None:
+    assert client.get("/metrics").status_code == 503
+
+
+def test_metrics_renders_prometheus_text() -> None:
+    from spero.api.supervisor import Supervisor
+    from spero.core.models import Policy, ProbeSpec, TargetPolicy
+
+    pol = Policy(
+        targets=[
+            TargetPolicy(
+                name="web",
+                provider="local",
+                probe=ProbeSpec(type="systemd", params={"unit": "nginx.service"}),
+            )
+        ]
+    )
+    api = TestClient(create_app(supervisor=Supervisor(pol)))
+    r = api.get("/metrics")
+    assert r.status_code == 200
+    assert "spero_up 1" in r.text
+    assert "spero_target_failures" in r.text
+
+
+def test_logs_stream_sse() -> None:
+    class _StreamStub:
+        async def start(self) -> None: ...
+        async def stop(self) -> None: ...
+
+        def stream_logs(self, name: str, *, tail: int = 200):
+            async def gen():
+                yield "line one"
+                yield "line two"
+
+            return gen()
+
+    api = TestClient(create_app(supervisor=_StreamStub()))  # type: ignore[arg-type]
+    r = api.get("/logs/web/stream")
+    assert r.status_code == 200
+    assert "data: line one" in r.text
+    assert "data: line two" in r.text
+
+
+def test_logs_stream_503_without_supervisor() -> None:
+    assert client.get("/logs/web/stream").status_code == 503
+
+
 def test_logs_tail_is_clamped() -> None:
     # The endpoint must bound `tail` before passing it to kubectl logs.
     class _StubSupervisor:
