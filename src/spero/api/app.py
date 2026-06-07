@@ -19,13 +19,17 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import ValidationError
 
 from spero import __version__
+from spero.api.auth import make_auth_dependency
 from spero.config import Settings
 from spero.config import settings as default_settings
 from spero.core.policy import load_policy
+
+# Upper bound for `kubectl logs --tail`, so a caller cannot request an enormous tail.
+_MAX_LOG_TAIL = 5000
 
 if TYPE_CHECKING:
     from spero.api.supervisor import Supervisor
@@ -57,24 +61,27 @@ def create_app(settings: Settings | None = None, supervisor: Supervisor | None =
         summary="Self-healing supervision agent for Linux hosts and Kubernetes.",
         lifespan=lifespan,
     )
+    # /health stays open (kubelet probes it); every other route is token-guarded
+    # when settings.api_token is set, and open otherwise (localhost dev default).
+    auth = Depends(make_auth_dependency(settings.api_token))
 
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
-    @app.get("/status")
+    @app.get("/status", dependencies=[auth])
     def status() -> dict[str, object]:
         if supervisor is None:
             raise HTTPException(503, "not supervising; run `spero serve`")
         return supervisor.status()
 
-    @app.get("/events")
+    @app.get("/events", dependencies=[auth])
     def events(limit: int = 50) -> dict[str, object]:
         if supervisor is None:
             raise HTTPException(503, "not supervising; run `spero serve`")
         return {"events": supervisor.events(limit)}
 
-    @app.get("/objects/{name}")
+    @app.get("/objects/{name}", dependencies=[auth])
     async def object_yaml(name: str) -> dict[str, str]:
         if supervisor is None:
             raise HTTPException(503, "not supervising; run `spero serve`")
@@ -87,10 +94,11 @@ def create_app(settings: Settings | None = None, supervisor: Supervisor | None =
         except RuntimeError as exc:
             raise HTTPException(502, f"kubectl error: {exc}") from exc
 
-    @app.get("/logs/{name}")
+    @app.get("/logs/{name}", dependencies=[auth])
     async def object_logs(name: str, tail: int = 200) -> dict[str, str]:
         if supervisor is None:
             raise HTTPException(503, "not supervising; run `spero serve`")
+        tail = max(1, min(tail, _MAX_LOG_TAIL))  # bound the tail; reject non-positive
         try:
             return {"logs": await supervisor.object_logs(name, tail=tail)}
         except KeyError:
@@ -100,7 +108,7 @@ def create_app(settings: Settings | None = None, supervisor: Supervisor | None =
         except RuntimeError as exc:
             raise HTTPException(502, f"kubectl error: {exc}") from exc
 
-    @app.get("/targets")
+    @app.get("/targets", dependencies=[auth])
     def targets() -> dict[str, object]:
         try:
             policy = load_policy(settings.policy_path)
