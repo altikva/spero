@@ -238,6 +238,9 @@ def top(
     remote: str = typer.Option(
         "", help="Observe a remote spero (http://host:port) instead of supervising locally."
     ),
+    token: str = typer.Option(
+        "", help="Bearer token for a guarded --remote spero (default: SPERO_API_TOKEN)."
+    ),
 ) -> None:
     """Live dashboard: supervise on a timer and render a k9s-style target grid (Ctrl-C to quit).
 
@@ -250,12 +253,13 @@ def top(
     """
     if remote:
         url = remote.rstrip("/")
+        tok = token or settings.api_token
         try:
             from spero.tui import run_remote_app
         except ImportError:
-            asyncio.run(_run_top_remote(url, interval=interval))  # rich.Live fallback
+            asyncio.run(_run_top_remote(url, interval=interval, token=tok))  # rich.Live fallback
             return
-        run_remote_app(url, interval=interval)
+        run_remote_app(url, interval=interval, token=tok)
         return
     p = load_policy(policy)
     try:
@@ -381,7 +385,7 @@ def _render_remote(status: dict, events: list[dict], server_version: str = "") -
     return Group(header, table, Panel(feed, title="recent events", border_style="dim"))
 
 
-async def _run_top_remote(url: str, *, interval: float) -> None:
+async def _run_top_remote(url: str, *, interval: float, token: str = "") -> None:
     """Poll a remote spero's control plane and render its live state.
 
     The rich.Live fallback for when the `tui` extra is absent. Keys: q quit, r
@@ -392,6 +396,8 @@ async def _run_top_remote(url: str, *, interval: float) -> None:
 
     import httpx
     from rich.live import Live
+
+    headers = {"Authorization": f"Bearer {token}"} if token else None
 
     stop = asyncio.Event()
     wake = asyncio.Event()
@@ -413,7 +419,7 @@ async def _run_top_remote(url: str, *, interval: float) -> None:
 
     fd = _start_keyreader(loop, _on_key)
     try:
-        async with httpx.AsyncClient(base_url=url, timeout=5.0) as client:
+        async with httpx.AsyncClient(base_url=url, timeout=5.0, headers=headers) as client:
             server_version = ""
             with Live(
                 Panel(f"connecting to {url} ..."), console=console, screen=True, auto_refresh=False
@@ -703,8 +709,10 @@ def owner(
 ) -> None:
     """Run the fleet owner: agents dial home, report status, and pull orders.
 
-    Approve a gated remediation with:
-    `curl -X POST http://host:port/agents/<id>/approve -d '{"target":"<name>"}'`
+    Set SPERO_OWNER_TOKEN to require `Authorization: Bearer <token>` on every route
+    except /health (agents send it automatically). Approve a gated remediation with:
+    `curl -H "Authorization: Bearer <token>" -X POST \
+        http://host:port/agents/<id>/approve -d '{"target":"<name>"}'`
     """
     import uvicorn
 
@@ -728,7 +736,15 @@ def agent(
     from spero.agent import run_agent
 
     p = load_policy(policy)
-    asyncio.run(run_agent(p, owner_url=owner.rstrip("/"), agent_id=agent_id, interval=interval))
+    asyncio.run(
+        run_agent(
+            p,
+            owner_url=owner.rstrip("/"),
+            agent_id=agent_id,
+            interval=interval,
+            token=settings.owner_token,
+        )
+    )
 
 
 def _llm() -> LLMClient:

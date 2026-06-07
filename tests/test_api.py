@@ -118,3 +118,24 @@ def test_logs_404_and_422_with_supervisor() -> None:
     api = TestClient(create_app(supervisor=Supervisor(pol)))
     assert api.get("/logs/missing").status_code == 404  # unknown target
     assert api.get("/logs/nginx").status_code == 422  # host probe has no pods
+
+
+def test_logs_tail_is_clamped() -> None:
+    # The endpoint must bound `tail` before passing it to kubectl logs.
+    class _StubSupervisor:
+        def __init__(self) -> None:
+            self.seen_tail: int | None = None
+
+        async def start(self) -> None: ...
+        async def stop(self) -> None: ...
+
+        async def object_logs(self, name: str, *, tail: int = 200) -> str:
+            self.seen_tail = tail
+            return "ok"
+
+    stub = _StubSupervisor()
+    api = TestClient(create_app(supervisor=stub))  # type: ignore[arg-type]
+    assert api.get("/logs/anything", params={"tail": 10_000_000}).status_code == 200
+    assert stub.seen_tail == 5000  # clamped to the max
+    api.get("/logs/anything", params={"tail": -5})
+    assert stub.seen_tail == 1  # non-positive floored to 1

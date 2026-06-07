@@ -19,8 +19,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
+from spero.api.auth import make_auth_dependency
 
 
 class Report(BaseModel):
@@ -71,30 +73,39 @@ class AgentRegistry:
         ]
 
 
-def create_owner_app(registry: AgentRegistry | None = None) -> FastAPI:
+def create_owner_app(registry: AgentRegistry | None = None, *, token: str | None = None) -> FastAPI:
     registry = registry or AgentRegistry()
+    if token is None:  # default to the configured owner token (empty = auth disabled)
+        from spero.config import settings
+
+        token = settings.owner_token
     app = FastAPI(title="spero owner", summary="Fleet owner: agents dial home here.")
     app.state.registry = registry
+    # /health stays open for kubelet probes; everything else is token-guarded.
+    auth = Depends(make_auth_dependency(token))
 
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.post("/agents/{agent_id}/report")
-    def report(agent_id: str, body: Report) -> dict[str, object]:
+    # The handlers are `async def` on purpose: they run on the event loop rather
+    # than Starlette's threadpool, so concurrent agent reports serialize and the
+    # in-memory AgentRegistry needs no lock.
+    @app.post("/agents/{agent_id}/report", dependencies=[auth])
+    async def report(agent_id: str, body: Report) -> dict[str, object]:
         return {"orders": registry.report(agent_id, body.status, body.events)}
 
-    @app.post("/agents/{agent_id}/approve")
-    def approve(agent_id: str, body: Approve) -> dict[str, str]:
+    @app.post("/agents/{agent_id}/approve", dependencies=[auth])
+    async def approve(agent_id: str, body: Approve) -> dict[str, str]:
         registry.queue_approve(agent_id, body.target)
         return {"queued": body.target}
 
-    @app.get("/agents")
-    def agents() -> dict[str, object]:
+    @app.get("/agents", dependencies=[auth])
+    async def agents() -> dict[str, object]:
         return {"agents": registry.fleet()}
 
-    @app.get("/agents/{agent_id}")
-    def agent(agent_id: str) -> dict[str, object]:
+    @app.get("/agents/{agent_id}", dependencies=[auth])
+    async def agent(agent_id: str) -> dict[str, object]:
         st = registry.agents.get(agent_id)
         if st is None:
             raise HTTPException(404, f"unknown agent: {agent_id}")

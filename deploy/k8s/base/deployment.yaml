@@ -54,6 +54,17 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            # Bearer token guarding /status, /events, /objects, /logs. Optional:
+            # without the `spero-secrets` Secret, auth is disabled and the
+            # NetworkPolicy is the only ingress control. Create it to require a
+            # token:  kubectl -n spero-system create secret generic spero-secrets \
+            #           --from-literal=api-token="$(openssl rand -hex 32)"
+            - name: SPERO_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: spero-secrets
+                  key: api-token
+                  optional: true
           volumeMounts:
             - name: policy
               mountPath: /etc/spero
