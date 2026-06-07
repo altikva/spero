@@ -69,9 +69,10 @@ filesystem.
 The Deployment runs `spero serve`, which supervises the cluster AND exposes its
 live state over HTTP on port 8800: `/status` (per-target health and the last
 action), `/events` (recent probe and remediation events), `/objects/{target}`
-(the target's object as YAML), and `/logs/{target}?tail=N` (the last N log lines
-of the target's pods). It serves store-less, so nothing is written under the
-read-only root filesystem.
+(the target's object as YAML), `/logs/{target}?tail=N` (the last N log lines of
+the target's pods), `/logs/{target}/stream` (a live `kubectl logs -f` SSE follow),
+and `/metrics` (Prometheus text: per-target health and failure counts). It serves
+store-less, so nothing is written under the read-only root filesystem.
 
 Watch it from your laptop by port-forwarding to the pod, then pointing a local
 spero at it:
