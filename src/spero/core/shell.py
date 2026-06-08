@@ -4,20 +4,23 @@
 # __copyright__ = "Copyright 2026 ALTIKVA."
 # __licence__ = "MIT & CC BY-NC-SA (https://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-# Description: Build a local `kubectl exec -it` argv into a target's pod (local
-#              convenience for `spero top`; uses your kubeconfig, not spero's RBAC).
+# Description: Build a local argv to open an interactive session into a target
+#              (kubectl exec / ssh / local shell) for `spero top`; uses YOUR tools
+#              and credentials, not spero's RBAC or any brokered identity.
 
-"""A local, interactive `kubectl exec` convenience for `spero top`.
+"""A local, interactive connect convenience for `spero top` (the `s` key).
 
-Shelling into a pod is a Kubernetes primitive (the ``pods/exec`` subresource), not a
-spero capability: this builds the argv for *your* local ``kubectl exec -it`` and the
-TUI shells out to it, so it runs with your kubeconfig and credentials, not the
-in-cluster agent's least-privilege RBAC. It is therefore offered only in local
-``spero top`` (never over ``--remote`` or dial-home, which would need a TTY tunnel).
+Opening a session into a target is done with the operator's own tools: this builds
+the argv for *your* local ``kubectl exec -it`` (pods), ``ssh -t`` (hosts), or a local
+shell, and the TUI shells out to it. It runs with your kubeconfig / ssh config and
+keys, not the in-cluster agent's least-privilege RBAC, so access stays bounded by
+what you can already reach. It is therefore offered only in local ``spero top``,
+never over ``--remote`` or dial-home (a brokered session is the Tier B bastion, a
+separate design, not this convenience).
 
-It is k8s-only: the target's provider must be a KubernetesProvider, and its probe
-must expose pods via ``pod_ref()``. A label selector is resolved to one running pod;
-a ``<kind>/<name>`` workload (e.g. ``deployment/x``) is passed to exec as-is.
+For a kubernetes target the probe must expose pods via ``pod_ref()``: a label
+selector is resolved to one running pod; a ``<kind>/<name>`` workload (e.g.
+``deployment/x``) is passed to exec as-is.
 """
 
 from __future__ import annotations
@@ -48,6 +51,33 @@ async def exec_argv(target: TargetPolicy, *, shell: str = "/bin/sh") -> list[str
         raise LookupError(f"{target.name}: probe {target.probe.type!r} has no pod to exec into")
     pod = await _resolve_pod(provider, ref)
     return [*provider.prefix(), "exec", "-it", pod, "--", shell]
+
+
+async def connect_argv(target: TargetPolicy, *, shell: str = "/bin/sh") -> list[str]:
+    """Build the argv for an interactive session into ``target`` (the `spero top` `s`).
+
+    Dispatches on the provider: ``kubectl exec -it`` for a kubernetes pod, ``ssh -t``
+    for an ssh host, or a local shell for a ``local`` target. Like ``exec_argv`` it
+    uses the operator's own tools and credentials (your kubeconfig, your ssh config
+    and keys), never spero's RBAC or any brokered identity, so access stays bounded
+    by what you can already reach. Raises LookupError when a kubernetes target has no
+    running pod to enter.
+    """
+    import os
+
+    from spero.providers.host import SSHTarget, parse_provider_spec
+
+    kind, detail = parse_provider_spec(target.provider)
+    if kind == "k8s":
+        return await exec_argv(target, shell=shell)
+    if kind == "ssh":
+        assert isinstance(detail, SSHTarget)
+        argv = ["ssh", "-t"]  # force a TTY for an interactive session
+        if detail.port is not None:
+            argv += ["-p", str(detail.port)]
+        argv.append(f"{detail.user}@{detail.host}" if detail.user else detail.host)
+        return argv
+    return [os.environ.get("SHELL", "/bin/sh")]  # local: a shell on this host
 
 
 async def _resolve_pod(provider: KubernetesProvider, ref: list[str]) -> str:

@@ -13,8 +13,47 @@ from __future__ import annotations
 import pytest
 
 from spero.core.models import ProbeSpec, TargetPolicy
-from spero.core.shell import _resolve_pod, exec_argv
+from spero.core.shell import _resolve_pod, connect_argv, exec_argv
 from spero.providers.command import CommandResult
+
+
+def _host_target(provider: str) -> TargetPolicy:
+    return TargetPolicy(
+        name="web", provider=provider, probe=ProbeSpec(type="port", params={"port": 22})
+    )
+
+
+async def test_connect_argv_ssh_with_user_and_port() -> None:
+    argv = await connect_argv(_host_target("ssh:deploy@web-01:2222"))
+    assert argv == ["ssh", "-t", "-p", "2222", "deploy@web-01"]
+
+
+async def test_connect_argv_ssh_host_only() -> None:
+    argv = await connect_argv(_host_target("ssh:web-01"))
+    assert argv == ["ssh", "-t", "web-01"]
+
+
+async def test_connect_argv_local_returns_a_shell() -> None:
+    argv = await connect_argv(_host_target("local"))
+    assert len(argv) == 1 and argv[0]  # the operator's $SHELL, or /bin/sh
+
+
+async def test_connect_argv_k8s_delegates_to_exec() -> None:
+    target = TargetPolicy(
+        name="orders",
+        provider="k8s:/orders",
+        probe=ProbeSpec(type="deployment", params={"name": "orders"}),
+    )
+    assert await connect_argv(target) == [
+        "kubectl",
+        "-n",
+        "orders",
+        "exec",
+        "-it",
+        "deployment/orders",
+        "--",
+        "/bin/sh",
+    ]
 
 
 class _FakeProvider:
