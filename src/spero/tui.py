@@ -135,7 +135,7 @@ class SperoTopApp(App[None]):
         Binding("i", "inspect", "inspect yaml"),
         Binding("l", "logs", "logs"),
         Binding("L", "follow", "follow logs"),
-        Binding("s", "shell", "shell into pod"),
+        Binding("s", "shell", "connect"),
     ]
 
     def __init__(self, policy: Policy, *, interval: float, store: bool) -> None:
@@ -321,30 +321,33 @@ class SperoTopApp(App[None]):
             self.run_worker(self._shell(name), exclusive=False, group="shell")
 
     async def _shell(self, name: str) -> None:
-        """Local convenience: shell into the target's pod with your own kubectl."""
+        """Local convenience: open a session into the target with your own tools.
+
+        kubectl exec for a pod, ssh for a host, a local shell for a local target.
+        """
         import subprocess
 
-        from spero.core.shell import exec_argv
+        from spero.core.shell import connect_argv
 
         target = self._target(name)
         if target is None:
             return
         try:
-            argv = await exec_argv(target)
+            argv = await connect_argv(target)
         except LookupError as exc:
             self.notify(str(exc), severity="warning")
             return
         except Exception as exc:
-            self.notify(f"exec setup failed: {exc}", severity="error")
+            self.notify(f"connect setup failed: {exc}", severity="error")
             return
         with self.suspend():
             try:
-                # argv is the local kubectl prefix + the probe's pod ref (no shell string).
+                # argv is your local kubectl/ssh/shell invocation (no shell string).
                 subprocess.run(argv)
             except (OSError, subprocess.SubprocessError) as exc:
                 # The terminal is restored under suspend(), so a plain print is correct here.
-                print(f"exec failed: {exc}")
-        self.notify(f"left shell on {name}")
+                print(f"connect failed: {exc}")
+        self.notify(f"left session on {name}")
 
     def action_follow(self) -> None:
         name = self._selected()
