@@ -239,7 +239,8 @@ def top(
     selection, scrollback) when the ``tui`` extra is installed, else a rich.Live fallback.
 
     With the ``tui`` extra: ``i`` inspects a target's YAML, ``l`` tails its pod logs,
-    and ``s`` shells into its pod with your own kubectl (local only, never --remote).
+    and ``s`` opens a session into it with your own tools -- kubectl exec for a pod,
+    ssh for a host, a local shell for a local target (local only, never --remote).
     """
     if remote:
         url = remote.rstrip("/")
