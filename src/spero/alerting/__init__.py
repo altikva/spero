@@ -8,7 +8,7 @@
 
 """Alerting sinks plus make_alerter, the settings-driven channel selector.
 
-NullAlerter by default; EmailAlerter ports the bot's mail.py; WebhookAlerter and
+NullAlerter by default; EmailAlerter sends over SMTP; WebhookAlerter and
 SlackAlerter POST to an HTTP endpoint. make_alerter picks one from Settings.
 """
 

@@ -8,8 +8,8 @@
 
 """Host remediations: restart a service, respawn a process, kill, rotate logs.
 
-Argv-style, no shell. The "start command" that used to live in the bot's
-TeleAction DB rows now comes from policy params.
+Argv-style, no shell. The command that starts a process comes from policy
+params, not from a database.
 """
 
 from __future__ import annotations
