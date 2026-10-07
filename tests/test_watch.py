@@ -11,9 +11,15 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
+import sys
 from pathlib import Path
 
+import pytest
+
 from _fakes import ScriptedProvider, systemd_handler
+from spero.cli import _run_watch
 from spero.core.engine import Engine
 from spero.core.policy import load_policy_str
 from spero.core.watch import build_scheduler, watch
@@ -72,3 +78,16 @@ async def test_watch_returns_when_stopped_immediately() -> None:
     stop = asyncio.Event()
     stop.set()  # already stopped -> watch should return promptly
     await asyncio.wait_for(watch(engine, engine.policy, stop=stop), timeout=5)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signal delivery")
+@pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM])
+async def test_cli_watch_stops_on_signal(monkeypatch: pytest.MonkeyPatch, sig: int) -> None:
+    # The CLI must hand the scheduler loop the same event its signal handlers set.
+    async def fake_watch(*_args: object, stop: asyncio.Event | None = None, **_kw: object) -> None:
+        assert stop is not None, "watch loop was started without the CLI's stop event"
+        os.kill(os.getpid(), sig)
+        await asyncio.wait_for(stop.wait(), timeout=5)
+
+    monkeypatch.setattr("spero.core.watch.watch", fake_watch)
+    await _run_watch(load_policy_str(POLICY), ai_approve=False, store=False)
