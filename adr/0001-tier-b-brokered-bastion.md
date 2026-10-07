@@ -141,4 +141,4 @@ This is a much higher bar than SEC-1..7 cleared, and it re-opens all of them.
 - Could Tier B ship as a thin relay in front of an incumbent (spero owns inventory +
   reverse tunnel; the incumbent owns identity, recording, compliance)?
 - Does adding a privileged session path violate constraints in regulated environments
-  (e.g. an Orange-style enterprise) that spero is otherwise designed to fit?
+  (e.g. a large telecom or a bank) that spero is otherwise designed to fit?

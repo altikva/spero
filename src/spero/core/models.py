@@ -8,9 +8,8 @@
 
 """Declarative policy model: targets -> probe -> remediations.
 
-This is the modern successor to the old cluster_config.json. A `Policy` is the
-whole supervised surface; `frozen` is the global action freeze that blocks every
-remediation (ported from the bot's action_freeze flag).
+A `Policy` is the whole supervised surface; `frozen` is the global action freeze
+that blocks every remediation.
 """
 
 from __future__ import annotations
@@ -43,7 +42,7 @@ class RemediationSpec(BaseModel):
     type: str
     params: dict[str, object] = Field(default_factory=dict)
     autonomy: Autonomy = Autonomy.suggest
-    # how many times to try before escalating (ported from NB_FAILS_BEFORE_AUTO_RESTART)
+    # consecutive failures required before this remediation becomes eligible
     max_attempts: int = 2
 
 

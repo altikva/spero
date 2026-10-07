@@ -4,9 +4,9 @@
 # __copyright__ = "Copyright 2026 ALTIKVA."
 # __licence__ = "MIT & CC BY-NC-SA (https://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-# Description: Tests for the ported local command executor.
+# Description: Tests for the local command executor.
 
-"""Tests for the ported local command executor."""
+"""Tests for the local command executor."""
 
 from __future__ import annotations
 

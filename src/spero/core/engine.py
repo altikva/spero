@@ -8,7 +8,7 @@
 
 """The supervision engine: probe -> count failures -> remediate -> alert.
 
-A faithful, typed re-encoding of the bot's ``perform_oversee`` loop. Per target:
+Per target:
 check health; on failure increment a counter and, once the failure count reaches a
 remediation's ``max_attempts``, run the most-escalated eligible remediation -- but
 only as far as its ``autonomy`` allows:

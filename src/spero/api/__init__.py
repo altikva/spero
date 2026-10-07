@@ -4,9 +4,9 @@
 # __copyright__ = "Copyright 2026 ALTIKVA."
 # __licence__ = "MIT & CC BY-NC-SA (https://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-# Description: The FastAPI control plane. Replaces the bot's Flask agent.py + api/ resources.
+# Description: The FastAPI control plane: health, live status, events, logs and metrics.
 
-"""The FastAPI control plane. Replaces the bot's Flask agent.py + api/ resources."""
+"""The FastAPI control plane: health, live status, events, logs and metrics."""
 
 from spero.api.app import app, create_app
 

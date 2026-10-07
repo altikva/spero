@@ -8,9 +8,9 @@
 
 """SQLAlchemy 2.0 models.
 
-The bot's Node / Alert / Change / Operation tables were really one thing: an
-append-only record of what happened on which host. Spero keeps a small `Node`
-registry and folds the rest into a single typed `Event` audit trail.
+Alerts, changes and operations are one thing: an append-only record of what
+happened on which host. Spero keeps a small `Node` registry and a single typed
+`Event` audit trail.
 """
 
 from __future__ import annotations

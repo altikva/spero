@@ -8,8 +8,8 @@
 
 """Alerter interface: fire on first failure, resolve on recovery.
 
-This is the open/resolve idea ported from the bot's save_one_alert /
-acknowledge_one_alert, minus the per-row DB bookkeeping (the engine owns state).
+An alert opens once per failing target and closes when the target recovers. The
+alerter keeps no state of its own: the engine tracks which alerts are open.
 """
 
 from __future__ import annotations
