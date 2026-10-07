@@ -191,7 +191,11 @@ async def _run_watch(policy_obj: object, *, ai_approve: bool, store: bool) -> No
     console.print(
         f"[green]spero watching[/] {len(policy_obj.targets)} target(s) ({mode}) - Ctrl-C to stop"
     )
-    await watch_loop(engine, policy_obj, store_engine=store_engine, on_outcome=_log_outcome)
+    # Pass the event the signal handlers set: without it the loop waits on a private
+    # event nobody sets, and only SIGKILL stops the daemon.
+    await watch_loop(
+        engine, policy_obj, store_engine=store_engine, on_outcome=_log_outcome, stop=stop
+    )
     console.print("[dim]stopped[/]")
 
 
