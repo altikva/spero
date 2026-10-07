@@ -14,6 +14,20 @@ All notable changes to Spero are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Policy reload in `spero watch`**: `SIGHUP` reloads the policy file without a
+  restart, and `--reload-on-change` picks up edits to the file. Unchanged targets
+  keep their failure counters and open alerts; a file that fails to load leaves the
+  current policy in force.
+
+### Fixed
+
+- `spero watch` now stops on SIGINT and SIGTERM. The stop event set by the signal
+  handlers was never passed to the scheduler loop, so only SIGKILL ended it.
+
 ## [0.4.0] - 2026-06-07
 
 A security-hardening and observability release from a full code audit.

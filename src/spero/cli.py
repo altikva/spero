@@ -13,6 +13,7 @@ for the human-in-the-loop approvals on gated remediations."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 
 import questionary
@@ -157,16 +158,41 @@ def watch(
         False, "--ai-approve", help="Let the AI approve gated remediations (agentic mode)."
     ),
     store: bool = typer.Option(True, help="Persist events to the store."),
+    reload_on_change: bool = typer.Option(
+        False,
+        "--reload-on-change",
+        help="Reload the policy when the file changes. SIGHUP always reloads.",
+    ),
 ) -> None:
-    """Supervise continuously: each target on its own probe interval, until Ctrl-C."""
+    """Supervise continuously: each target on its own probe interval, until Ctrl-C.
+
+    Send SIGHUP to reload the policy file without a restart. Targets that did not
+    change keep their failure counters and open alerts.
+    """
     p = load_policy(policy)
-    asyncio.run(_run_watch(p, ai_approve=ai_approve, store=store))
+    asyncio.run(
+        _run_watch(
+            p,
+            ai_approve=ai_approve,
+            store=store,
+            policy_path=policy,
+            reload_on_change=reload_on_change,
+        )
+    )
 
 
-async def _run_watch(policy_obj: object, *, ai_approve: bool, store: bool) -> None:
+async def _run_watch(
+    policy_obj: object,
+    *,
+    ai_approve: bool,
+    store: bool,
+    policy_path: str | None = None,
+    reload_on_change: bool = False,
+) -> None:
     import signal
 
     from spero.core.models import Policy
+    from spero.core.policy import PolicyReloader
     from spero.core.watch import watch as watch_loop
 
     assert isinstance(policy_obj, Policy)
@@ -187,6 +213,14 @@ async def _run_watch(policy_obj: object, *, ai_approve: bool, store: bool) -> No
         except NotImplementedError:  # e.g. Windows: fall back to a classic handler
             signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop.set))
 
+    reloader = None
+    reload_now = asyncio.Event()
+    if policy_path is not None:
+        reloader = PolicyReloader(policy_path, on_change=reload_on_change)
+        # No SIGHUP on Windows: the file watch is the only reload path there.
+        with contextlib.suppress(NotImplementedError, AttributeError, ValueError):
+            loop.add_signal_handler(signal.SIGHUP, reload_now.set)
+
     mode = "agentic" if ai_approve else "human-gated"
     console.print(
         f"[green]spero watching[/] {len(policy_obj.targets)} target(s) ({mode}) - Ctrl-C to stop"
@@ -194,7 +228,14 @@ async def _run_watch(policy_obj: object, *, ai_approve: bool, store: bool) -> No
     # Pass the event the signal handlers set: without it the loop waits on a private
     # event nobody sets, and only SIGKILL stops the daemon.
     await watch_loop(
-        engine, policy_obj, store_engine=store_engine, on_outcome=_log_outcome, stop=stop
+        engine,
+        policy_obj,
+        store_engine=store_engine,
+        on_outcome=_log_outcome,
+        stop=stop,
+        reloader=reloader,
+        reload_now=reload_now,
+        on_reload=_log_reload,
     )
     console.print("[dim]stopped[/]")
 
@@ -203,6 +244,17 @@ def _now() -> str:
     from datetime import datetime
 
     return datetime.now().strftime("%H:%M:%S")
+
+
+def _log_reload(result: object) -> None:
+    from spero.core.engine import PolicyChange
+
+    if isinstance(result, PolicyChange):
+        console.print(f"[dim]{_now()}[/] [green]policy reloaded[/]: {result.summary()}")
+    else:
+        console.print(
+            f"[dim]{_now()}[/] [yellow]policy reload skipped[/], kept the current: {result}"
+        )
 
 
 def _log_outcome(outcome: TargetOutcome) -> None:

@@ -124,6 +124,25 @@ remote approver and can push a new policy to a running agent (hot-swapped, no
 redeploy). `auto` actions still run if the owner is offline. `SPERO_OWNER_TOKEN`
 guards the owner.
 
+## Reloading the policy
+
+A running `spero watch` reloads its policy file on `SIGHUP`, without a restart:
+
+```bash
+kill -HUP "$(pgrep -f 'spero watch')"
+spero watch --reload-on-change     # or let it pick up edits to the file by itself
+```
+
+Added targets start being supervised and removed ones are dropped. A target that
+did not change keeps its failure counter and its open alert, so a reload never
+delays an escalation. A target whose spec changed restarts its counter. A file that
+fails to load is reported and the current policy stays in force.
+
+`--reload-on-change` waits until the file has stopped changing before reading it,
+and rejects an empty file. If a script regenerates the policy, write to a temporary
+file and rename it over the real one: the rename is atomic, a shell redirection is
+not.
+
 ## Alerting
 
 Spero fires on first failure and resolves on recovery. `NullAlerter` is the default;
