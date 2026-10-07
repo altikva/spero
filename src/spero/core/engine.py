@@ -70,6 +70,18 @@ class TargetOutcome:
     action: ActionOutcome | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class PolicyChange:
+    """What a policy reload did to the target list, by target name."""
+
+    added: tuple[str, ...] = ()
+    removed: tuple[str, ...] = ()
+    changed: tuple[str, ...] = ()  # same name, different spec
+
+    def summary(self) -> str:
+        return f"{len(self.added)} added, {len(self.removed)} removed, {len(self.changed)} changed"
+
+
 class Engine:
     def __init__(
         self,
@@ -89,6 +101,9 @@ class Engine:
         self.alerter = alerter or NullAlerter()
         self._failures: dict[str, int] = {}
         self._open_alerts: set[str] = set()
+        # Targets dropped by a reload. A probe already in flight when its target was
+        # removed must not write state back for it.
+        self._retired: set[str] = set()
         self._events: list[Event] = []
         self._lock = asyncio.Lock()
         self._persist_lock = asyncio.Lock()
@@ -102,6 +117,38 @@ class Engine:
 
     def _record(self, node: str, target: str, kind: str, detail: str) -> None:
         self._events.append(Event(node=node, target=target, kind=kind, detail=detail))
+
+    async def apply_policy(self, policy: Policy) -> PolicyChange:
+        """Swap in a reloaded policy without losing the state of unchanged targets.
+
+        Targets are matched by name. An unchanged target keeps its failure counter
+        and its open alert, so a reload never delays an escalation already under
+        way. A changed target (same name, different spec) restarts its counter but
+        keeps its open alert, so a still-failing target does not alert twice. A
+        removed target loses its counter and has its open alert resolved.
+        """
+        async with self._lock:
+            old = {t.name: t for t in self.policy.targets}
+            new = {t.name: t for t in policy.targets}
+            change = PolicyChange(
+                added=tuple(n for n in new if n not in old),
+                removed=tuple(n for n in old if n not in new),
+                changed=tuple(n for n in new if n in old and new[n] != old[n]),
+            )
+            for name in change.removed:
+                self._failures.pop(name, None)
+                if name in self._open_alerts:
+                    self._open_alerts.discard(name)
+                    try:
+                        await self.alerter.resolve(name, "removed from policy")
+                    except Exception as exc:  # a failing alert channel must not block a reload
+                        self._record(old[name].provider, name, "error", f"resolve failed: {exc}")
+            for name in change.changed:
+                self._failures.pop(name, None)
+            self._retired = (self._retired | set(change.removed)) - set(new)
+            self.policy = policy
+            self._record("spero", "policy", "info", f"policy reloaded: {change.summary()}")
+            return change
 
     async def run_cycle(self) -> list[TargetOutcome]:
         """Supervise every target once, concurrently.
@@ -137,6 +184,8 @@ class Engine:
         probe = build_probe(target.probe)
         node = target.provider
         result = await probe.check(provider)
+        if target.name in self._retired:  # removed by a reload while this probe ran
+            return TargetOutcome(target.name, result.healthy, result.detail, 0)
 
         if result.healthy:
             self._failures[target.name] = 0
