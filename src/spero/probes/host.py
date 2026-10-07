@@ -22,7 +22,7 @@ from spero.providers.base import Provider
 
 
 class ProcessProbe(Probe):
-    """Healthy iff at least one process matches. Ports get_process_pid."""
+    """Healthy iff at least one process matches."""
 
     type: ClassVar[str] = "process"
 
@@ -43,7 +43,7 @@ class ProcessProbe(Probe):
 
 
 class SystemdProbe(Probe):
-    """Healthy iff ``systemctl is-active`` reports active. Ports is_service_running."""
+    """Healthy iff ``systemctl is-active`` reports active."""
 
     type: ClassVar[str] = "systemd"
 
@@ -57,7 +57,7 @@ class SystemdProbe(Probe):
 
 
 class PortProbe(Probe):
-    """Healthy iff something is listening on the TCP port. Ports is_port_used (lsof)."""
+    """Healthy iff something is listening on the TCP port."""
 
     type: ClassVar[str] = "port"
 

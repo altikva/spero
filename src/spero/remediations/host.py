@@ -22,7 +22,7 @@ from spero.remediations.base import Remediation, RemediationResult
 
 
 class RestartService(Remediation):
-    """`systemctl restart <unit>`. Ports action_over_service."""
+    """`systemctl restart <unit>`."""
 
     type: ClassVar[str] = "restart"
 
@@ -39,7 +39,7 @@ class RestartService(Remediation):
 
 
 class RespawnProcess(Remediation):
-    """Run a start command, optionally as another user. Ports start_stop_process.
+    """Run a start command, optionally as another user.
 
     ``start`` is tokenized argv-style (``shlex.split``), never handed to a shell --
     so policy params can't smuggle in ``;``/``$(...)``/redirection. If you genuinely
@@ -62,7 +62,7 @@ class RespawnProcess(Remediation):
 
 
 class KillProcess(Remediation):
-    """`pkill -9` matching processes. Ports do_kill_processes; the forceful step."""
+    """`pkill -9` matching processes; the forceful step."""
 
     type: ClassVar[str] = "kill"
     destructive: ClassVar[bool] = True
