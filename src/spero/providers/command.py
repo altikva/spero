@@ -10,8 +10,8 @@
 
 Design choices:
 
-* the bare ``(rc, out, err)`` tuple became a typed ``CommandResult``;
-* the SIGALRM timeout (Unix-only, not thread-safe) became real timeouts;
+* results are a typed ``CommandResult``, not a bare ``(rc, out, err)`` tuple;
+* timeouts are real process timeouts, not SIGALRM (Unix-only, not thread-safe);
 * every failure mode returns a ``CommandResult`` instead of raising, so the
   supervision loop never crashes on a missing binary or bad quoting;
 * an ``async`` variant (:func:`run_local_async`) backs the async provider layer.

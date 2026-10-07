@@ -9,9 +9,8 @@
 """Host probes: process, systemd, port, disk.
 
 Each probe is read-only and speaks to the target only through ``provider.run``,
-using argv-style commands (no shell), expressing
-``ps | awk`` / locale-grep pipelines as ``pgrep`` / ``systemctl is-active`` /
-``ss`` / ``df``.
+using argv-style commands (no shell): ``pgrep`` / ``systemctl is-active`` /
+``ss`` / ``df``, never a ``ps | awk`` pipeline or a grep over localized output.
 """
 
 from __future__ import annotations
@@ -79,8 +78,8 @@ class PortProbe(Probe):
 class DiskProbe(Probe):
     """Healthy iff filesystem usage at ``path`` is at or below ``threshold_pct``.
 
-    Measures filesystem usage, not hardware health. This is the
-    probe the Phase 3 predictive layer forecasts against.
+    Measures filesystem usage, not hardware health. This is the probe the
+    predictive layer forecasts against.
     """
 
     type: ClassVar[str] = "disk"

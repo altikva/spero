@@ -8,9 +8,8 @@
 
 """Declarative policy model: targets -> probe -> remediations.
 
-A `Policy` is the
-whole supervised surface; `frozen` is the global action freeze that blocks every
-remediation.
+A `Policy` is the whole supervised surface; `frozen` is the global action freeze
+that blocks every remediation.
 """
 
 from __future__ import annotations
@@ -43,7 +42,7 @@ class RemediationSpec(BaseModel):
     type: str
     params: dict[str, object] = Field(default_factory=dict)
     autonomy: Autonomy = Autonomy.suggest
-    # how many times to try before escalating
+    # consecutive failures required before this remediation becomes eligible
     max_attempts: int = 2
 
 

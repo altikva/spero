@@ -4,9 +4,9 @@
 # __copyright__ = "Copyright 2026 ALTIKVA."
 # __licence__ = "MIT & CC BY-NC-SA (https://www.altikva.com/licenses/LICENSE-1.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-# Description: Persistence: the event/audit store. A node registry and an append-only event trail.
+# Description: Persistence: the event/audit store (a node registry and an append-only event trail).
 
-"""Persistence: the event/audit store. A node registry and an append-only event trail."""
+"""Persistence: the event/audit store (a node registry and an append-only event trail)."""
 
 from spero.store.db import init_db, make_engine, recent_events, session_scope
 from spero.store.models import Base, Event, Node
