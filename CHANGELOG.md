@@ -16,11 +16,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-20
+
 ### Changed
 
 - **License**: Spero is now released under the Apache License 2.0 (SPDX
   `Apache-2.0`), replacing the ALTIKVA Dual License v1.0 (`MIT AND
   CC-BY-NC-SA-4.0`). The non-commercial restriction is gone.
+- Releases 0.1.0 to 0.4.0 are no longer available on PyPI; 0.5.0 is the first
+  release under Apache-2.0.
 
 ### Added
 
@@ -172,6 +176,8 @@ A security-hardening and observability release from a full code audit.
 - **CLI** — `status`, `run`, `watch`, `heal`, `ask`, `diagnose`, `forecast`, `serve`.
 - **Control plane** — FastAPI app with `/health` and `/targets`.
 
+[Unreleased]: https://github.com/altikva/spero/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/altikva/spero/releases/tag/v0.5.0
 [0.4.0]: https://github.com/altikva/spero/releases/tag/v0.4.0
 [0.3.0]: https://github.com/altikva/spero/releases/tag/v0.3.0
 [0.2.0]: https://github.com/altikva/spero/releases/tag/v0.2.0
