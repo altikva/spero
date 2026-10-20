@@ -3,7 +3,7 @@
 # __creation__ = 2026-06-03
 # __author__ = "jndjama (Joy Ndjama)"
 # __copyright__ = "Copyright 2026 ALTIKVA."
-# __licence__ = "MIT & CC BY-NC-SA (https://www.altikva.com/licenses/LICENSE-1.0)"
+# __licence__ = "Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0)"
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 # Description: Project README: what Spero is, its concepts, quickstart, and roadmap.
 -->
@@ -179,6 +179,5 @@ uv run pytest                      # run the suite
 
 ## License
 
-Spero is released under the **ALTIKVA Dual License v1.0**
-([MIT](./LICENSE) and [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)),
-SPDX `MIT AND CC-BY-NC-SA-4.0`. See [LICENSE](./LICENSE).
+Spero is released under the [Apache License 2.0](./LICENSE), SPDX `Apache-2.0`.
+See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
