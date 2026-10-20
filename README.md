@@ -28,7 +28,7 @@ root-cause, and policy-gated remediation.
 
 Shipped under [Altikva](https://altikva.com).
 
-> Status: pre-alpha but functional, published on PyPI as `spero` 0.4.0. It
+> Status: pre-alpha but functional, published on PyPI as `spero` 0.5.0. It
 > supervises and heals Linux hosts (local + asyncssh) and Kubernetes (kubectl)
 > through one engine, with an AI layer (prediction, root-cause, natural-language
 > queries, agentic policy-gated remediation), a control plane with live
