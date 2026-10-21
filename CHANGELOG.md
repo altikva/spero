@@ -16,6 +16,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- The `mcp` extra now requires fastmcp 3.2 or later. fastmcp 2.x carried open
+  advisories, and it pulled in diskcache, which has an advisory with no fixed
+  release; fastmcp 3 no longer depends on it. Spero has no MCP server yet, so no
+  code changes.
+
 ## [0.5.0] - 2026-10-20
 
 ### Changed
