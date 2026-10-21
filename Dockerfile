@@ -13,8 +13,10 @@ ENV UV_LINK_MODE=copy \
 
 WORKDIR /src
 
-# Create an isolated venv that the final stage will copy verbatim.
-RUN uv venv /opt/venv --python python3.12
+# Create an isolated venv that the final stage will copy verbatim. Use the base
+# image's own interpreter rather than a pinned minor, so a base-image bump does
+# not break the build; both stages share the same base, so the venv still runs.
+RUN uv venv /opt/venv --python /usr/local/bin/python3
 ENV VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:${PATH}"
 
