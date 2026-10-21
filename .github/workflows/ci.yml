@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   # Gating job: reproducible install from the committed uv.lock. --locked fails
   # the build if the lock is stale vs pyproject, so a green run proves the lock
@@ -56,3 +59,15 @@ jobs:
         run: uv sync --upgrade --all-extras --python "$PYTHON_VERSION"
       - name: Test
         run: uv run --no-sync pytest
+
+  # Build the image and run it once. The test jobs never touch the Dockerfile,
+  # so without this a base-image bump that breaks the build still goes green.
+  # Nothing is pushed: this job needs no registry credentials or secrets.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build image
+        run: docker build -t spero:ci .
+      - name: Smoke-test image
+        run: docker run --rm spero:ci version
