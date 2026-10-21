@@ -48,7 +48,7 @@ certs = ["cryptography>=42"]
 # Phase 3 — AI layer: predictive, root-cause, NL interface
 ai = ["anthropic>=0.69", "rank-bm25>=0.2"]
 # Phase 3 — expose Spero to agents over MCP
-mcp = ["fastmcp>=2.8,<3"]      # >=2.0 silently resolves to the re-architected 3.x
+mcp = ["fastmcp>=3.2,<4"]      # 3.2 is the first release without known advisories
 # Rich interactive `spero top` (mouse, row selection, scrollback). Falls back to a
 # rich.Live dashboard when this is not installed, so the command always works.
 tui = ["textual>=0.60"]
