@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 # Build stage: build and install the CURRENT spero source into a clean venv.
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim AS build
+FROM python:3.14-slim AS build
 
 # uv: fast, reproducible installs. Pinned for repeatable builds.
 COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /uvx /usr/local/bin/
@@ -33,7 +33,7 @@ RUN uv pip install --python /opt/venv .
 # ---------------------------------------------------------------------------
 # Final stage: minimal runtime with the venv + a pinned kubectl, non-root.
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 # Pinned kubectl. Bump KUBECTL_VERSION and KUBECTL_SHA256 together.
 # sha256 from https://dl.k8s.io/release/v1.31.4/bin/linux/amd64/kubectl.sha256
