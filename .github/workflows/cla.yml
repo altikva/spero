@@ -58,6 +58,10 @@ jobs:
               owner, repo, pull_number: number, per_page: 100,
             });
 
+            // The commits API returns at most 250 commits. Past that, some
+            // authors would go unchecked, so fail closed instead of passing.
+            const truncated = pr.commits > commits.length;
+
             const logins = new Set([pr.user.login]);
             const unlinked = new Set();
             for (const c of commits) {
@@ -93,7 +97,7 @@ jobs:
             for (const login of logins) {
               if (!(await hasSigned(login))) missing.push(login);
             }
-            const ok = missing.length === 0 && unlinked.size === 0;
+            const ok = missing.length === 0 && unlinked.size === 0 && !truncated;
 
             await github.rest.repos.createCommitStatus({
               owner, repo, sha: pr.head.sha, context: 'cla',
@@ -115,6 +119,9 @@ jobs:
                 lines.push('', `Not signed yet: ${missing.map((l) => '@' + l).join(', ')}.`,
                   '', 'To sign, read the agreement, then post this comment exactly as written:',
                   '', '```', PHRASE, '```');
+              }
+              if (truncated) {
+                lines.push('', `This pull request has ${pr.commits} commits, more than the ${commits.length} the check can read, so not every author can be verified. Squash or split it, then push again.`);
               }
               if (unlinked.size) {
                 lines.push('', `Some commits are authored with an email that is not linked to a GitHub account (${[...unlinked].join(', ')}), so their author cannot be checked. Add that email to your GitHub account, or amend the commits with an email that is linked, then push again.`);
