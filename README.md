@@ -177,6 +177,11 @@ uv sync --locked --all-extras
 uv run pytest                      # run the suite
 ```
 
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md); a pull request
+is merged once its author has signed the [Contributor License Agreement](./CLA.md).
+
 ## License
 
 Spero is released under the [Apache License 2.0](./LICENSE), SPDX `Apache-2.0`.
