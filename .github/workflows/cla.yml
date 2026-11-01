@@ -1,0 +1,140 @@
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# __creation__ = 2026-11-01
+# __author__ = "jndjama (Joy Ndjama)"
+# __copyright__ = "Copyright 2026 ALTIKVA."
+# __licence__ = "Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0)"
+# -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+# Description: Contributor License Agreement check. Sets a `cla` commit status
+#              on every pull request: green once the PR author and every commit
+#              author have signed CLA.md, red with a comment explaining how to
+#              sign otherwise. A signature is a comment carrying the exact
+#              phrase from CLA.md, on this PR or any earlier one in the repo.
+#
+# pull_request_target runs this file from main, never from the PR, and the job
+# never checks out PR code, so a fork cannot change what the check does. All
+# PR data is read through the API inside the script; nothing reaches a shell.
+name: cla
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: cla-${{ github.event.pull_request.number || github.event.issue.number }}
+
+jobs:
+  cla:
+    # Bots (Dependabot) do not sign. On comments, only react to a signature
+    # posted on a pull request.
+    if: >-
+      (github.event_name == 'pull_request_target'
+        && github.event.pull_request.user.type != 'Bot')
+      || (github.event_name == 'issue_comment'
+        && github.event.issue.pull_request
+        && contains(github.event.comment.body, 'I hereby sign it'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const PHRASE = 'I have read the Spero CLA v1.0 and I hereby sign it.';
+            // Maintainers who own the copyright already, so they never sign.
+            const EXEMPT = new Set(['joy-software']);
+            const MARKER = '<!-- spero-cla-check -->';
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request?.number ?? context.payload.issue.number;
+            const claUrl = `https://github.com/${owner}/${repo}/blob/main/CLA.md`;
+
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner, repo, pull_number: number, per_page: 100,
+            });
+
+            // The commits API returns at most 250 commits. Past that, some
+            // authors would go unchecked, so fail closed instead of passing.
+            const truncated = pr.commits > commits.length;
+
+            const logins = new Set([pr.user.login]);
+            const unlinked = new Set();
+            for (const c of commits) {
+              if (c.author?.login) logins.add(c.author.login);
+              else unlinked.add(c.commit.author?.email || c.sha.slice(0, 7));
+            }
+
+            const isSignature = (comment, login) =>
+              comment.user?.login === login && comment.body?.trim() === PHRASE;
+
+            const prComments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: number, per_page: 100,
+            });
+
+            async function hasSigned(login) {
+              if (EXEMPT.has(login) || login.endsWith('[bot]')) return true;
+              if (prComments.some((c) => isSignature(c, login))) return true;
+              // A signature on an earlier PR counts too. Search finds the
+              // candidates; each one is confirmed by reading its comments.
+              const q = `repo:${owner}/${repo} is:pr commenter:${login} "hereby sign it"`;
+              const { data: found } = await github.rest.search.issuesAndPullRequests({ q, per_page: 30 });
+              for (const item of found.items) {
+                if (item.number === number) continue;
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: item.number, per_page: 100,
+                });
+                if (comments.some((c) => isSignature(c, login))) return true;
+              }
+              return false;
+            }
+
+            const missing = [];
+            for (const login of logins) {
+              if (!(await hasSigned(login))) missing.push(login);
+            }
+            const ok = missing.length === 0 && unlinked.size === 0 && !truncated;
+
+            await github.rest.repos.createCommitStatus({
+              owner, repo, sha: pr.head.sha, context: 'cla',
+              state: ok ? 'success' : 'failure',
+              target_url: claUrl,
+              description: ok ? 'All contributors have signed the CLA'
+                              : 'Contributor License Agreement not signed yet',
+            });
+
+            let body;
+            if (ok) {
+              body = `${MARKER}\nThank you, every contributor on this pull request has signed the [Contributor License Agreement](${claUrl}).`;
+            } else {
+              const lines = [
+                MARKER,
+                `Thank you for your pull request. Before it can be merged, every contributor needs to sign the [Spero Contributor License Agreement](${claUrl}). It takes one comment and covers all your future pull requests.`,
+              ];
+              if (missing.length) {
+                lines.push('', `Not signed yet: ${missing.map((l) => '@' + l).join(', ')}.`,
+                  '', 'To sign, read the agreement, then post this comment exactly as written:',
+                  '', '```', PHRASE, '```');
+              }
+              if (truncated) {
+                lines.push('', `This pull request has ${pr.commits} commits, more than the ${commits.length} the check can read, so not every author can be verified. Squash or split it, then push again.`);
+              }
+              if (unlinked.size) {
+                lines.push('', `Some commits are authored with an email that is not linked to a GitHub account (${[...unlinked].join(', ')}), so their author cannot be checked. Add that email to your GitHub account, or amend the commits with an email that is linked, then push again.`);
+              }
+              body = lines.join('\n');
+            }
+
+            const existing = prComments.find(
+              (c) => c.user?.type === 'Bot' && c.body?.startsWith(MARKER));
+            if (existing) {
+              if (existing.body !== body) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              }
+            } else if (!ok) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+            }

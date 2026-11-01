@@ -16,6 +16,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Contributor License Agreement**: `CLA.md` and `CONTRIBUTING.md`. A `cla`
+  check on every pull request asks contributors to sign once, by posting a
+  comment, before their first contribution is merged.
+
 ### Security
 
 - The `mcp` extra now requires fastmcp 3.2 or later. fastmcp 2.x carried open
