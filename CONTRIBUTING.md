@@ -33,7 +33,7 @@ sign. Open an issue if your employer needs to sign its own agreement.
 
 1. Open an issue first for anything bigger than a small fix, so we can agree on
    the approach before you write it.
-2. Fork the repository and create a topic branch off `main`: `feature/...`,
+2. Fork the repository and create a topic branch off `develop`: `feature/...`,
    `fix/...`, `docs/...` or `chore/...`.
 3. Set up the environment and run the checks before you push:
 
@@ -45,9 +45,9 @@ sign. Open an issue if your employer needs to sign its own agreement.
    uv run pytest
    ```
 
-4. Open a pull request against `main`. Describe what changes and why, and how
+4. Open a pull request against `develop`. Describe what changes and why, and how
    you tested it. CI runs the same checks on Python 3.11 to 3.14 and builds the
-   Docker image.
+   Docker image. `main` only moves when a release is cut from `develop`.
 
 ## Ground rules for code
 
