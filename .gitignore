@@ -28,6 +28,9 @@ htmlcov/
 git-flow-plus.config
 /CLAUDE.md
 
+# cgh index, memory and auth key (never commit)
+.cgh/
+
 # codegraph index
 .codegraph/
 
