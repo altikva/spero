@@ -16,6 +16,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-23
+
 ### Added
 
 - **Contributor License Agreement**: `CLA.md` and `CONTRIBUTING.md`. A `cla`
@@ -28,6 +30,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   advisories, and it pulled in diskcache, which has an advisory with no fixed
   release; fastmcp 3 no longer depends on it. Spero has no MCP server yet, so no
   code changes.
+
+### Changed
+
+- The `mcp` extra now accepts fastmcp 4 (`fastmcp>=3.2,<5`).
+- The Docker image is built on `python:3.15-slim`, and CI now builds and
+  smoke-tests it on every pull request. The image is not published.
+- The lockfile moves to anthropic 2.x, fastmcp 4.x and watchdog 7, along with
+  routine minor updates. The minimum versions declared in `pyproject.toml` are
+  unchanged apart from fastmcp.
+- Every action in the release workflow, including the PyPI publish action, is
+  pinned to a commit.
 
 ## [0.5.0] - 2026-10-20
 
@@ -189,7 +202,8 @@ A security-hardening and observability release from a full code audit.
 - **CLI** — `status`, `run`, `watch`, `heal`, `ask`, `diagnose`, `forecast`, `serve`.
 - **Control plane** — FastAPI app with `/health` and `/targets`.
 
-[Unreleased]: https://github.com/altikva/spero/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/altikva/spero/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/altikva/spero/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/altikva/spero/releases/tag/v0.5.0
 [0.4.0]: https://github.com/altikva/spero/releases/tag/v0.4.0
 [0.3.0]: https://github.com/altikva/spero/releases/tag/v0.3.0
