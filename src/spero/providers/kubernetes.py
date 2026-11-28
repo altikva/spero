@@ -57,6 +57,7 @@ class KubernetesProvider(Provider):
         retries: int = 0,
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
+        env_replace: bool = False,
     ) -> CommandResult:
         if cwd is not None or env is not None:
             raise NotImplementedError("KubernetesProvider does not support cwd/env")

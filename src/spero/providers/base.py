@@ -31,6 +31,11 @@ class Provider(ABC):
         retries: int = 0,
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
+        env_replace: bool = False,
     ) -> CommandResult:
-        """Run ``command`` and return its result."""
+        """Run ``command`` and return its result.
+
+        ``env`` is merged onto the provider's environment, or replaces it entirely
+        when ``env_replace`` is true.
+        """
         raise NotImplementedError

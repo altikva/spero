@@ -45,8 +45,11 @@ class LocalProvider(Provider):
         retries: int = 0,
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
+        env_replace: bool = False,
     ) -> CommandResult:
-        return await run_local_async(command, timeout=timeout, retries=retries, cwd=cwd, env=env)
+        return await run_local_async(
+            command, timeout=timeout, retries=retries, cwd=cwd, env=env, env_replace=env_replace
+        )
 
 
 class SSHProvider(Provider):
@@ -89,6 +92,7 @@ class SSHProvider(Provider):
         retries: int = 0,
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
+        env_replace: bool = False,
     ) -> CommandResult:
         if cwd is not None or env is not None:
             # Bake cwd/env into the command until we wire them through asyncssh.

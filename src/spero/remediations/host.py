@@ -15,6 +15,7 @@ params, not from a database.
 from __future__ import annotations
 
 import shlex
+from collections.abc import Mapping
 from typing import ClassVar
 
 from spero.providers.base import Provider
@@ -46,19 +47,47 @@ class RespawnProcess(Remediation):
     need shell features, make the start command explicit, e.g. ``sh -c "a && b"``.
     Running as another user goes through ``runuser -u <user> --`` (argv, no shell),
     not ``su -c`` (which would shell-interpret the command).
+
+    ``env`` sets variables for the started process: merged onto the provider's
+    environment, or the whole environment when ``env_replace`` is true (then
+    ``start`` should be an absolute path, or ``env`` should carry ``PATH``).
+    Values may be secrets: results and logs name the keys only, never the values.
     """
 
     type: ClassVar[str] = "respawn"
 
-    def __init__(self, start: str, user: str | None = None) -> None:
+    def __init__(
+        self,
+        start: str,
+        user: str | None = None,
+        env: Mapping[str, str] | None = None,
+        env_replace: bool = False,
+    ) -> None:
+        if env is not None and (
+            not isinstance(env, Mapping)
+            or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items())
+        ):
+            # TypeError so build_remediation reports it as bad params at policy load.
+            raise TypeError("env must be a mapping of strings to strings")
+        if not isinstance(env_replace, bool):
+            raise TypeError("env_replace must be a boolean")
+        if env_replace and env is None:
+            raise TypeError("env_replace needs env (the variables to start with)")
         self.start = start
         self.user = user
+        self.env = dict(env) if env is not None else None
+        self.env_replace = env_replace
 
     async def apply(self, provider: Provider) -> RemediationResult:
         argv = shlex.split(self.start)
         cmd = ["runuser", "-u", self.user, "--", *argv] if self.user else argv
-        r = await provider.run(cmd, timeout=60)
-        return RemediationResult(r.ok, r.stderr.strip() or f"started {self.start!r}")
+        r = await provider.run(cmd, timeout=60, env=self.env, env_replace=self.env_replace)
+        detail = f"started {self.start!r}"
+        if self.env is not None:
+            mode = "replaced" if self.env_replace else "merged"
+            keys = ", ".join(sorted(self.env)) or "none"
+            detail += f" (env {mode}: {keys})"
+        return RemediationResult(r.ok, r.stderr.strip() or detail)
 
 
 class KillProcess(Remediation):

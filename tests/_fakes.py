@@ -24,6 +24,7 @@ class ScriptedProvider(Provider):
     def __init__(self, handler: Handler) -> None:
         self._handler = handler
         self.commands: list[str | Sequence[str]] = []
+        self.envs: list[tuple[dict[str, str] | None, bool]] = []
 
     async def run(
         self,
@@ -33,8 +34,10 @@ class ScriptedProvider(Provider):
         retries: int = 0,
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
+        env_replace: bool = False,
     ) -> CommandResult:
         self.commands.append(command)
+        self.envs.append((dict(env) if env is not None else None, env_replace))
         return self._handler(command)
 
 

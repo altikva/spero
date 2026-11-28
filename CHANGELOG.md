@@ -21,6 +21,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Contributor License Agreement**: `CLA.md` and `CONTRIBUTING.md`. A `cla`
   check on every pull request asks contributors to sign once, by posting a
   comment, before their first contribution is merged.
+- **`respawn` environment**: optional `env` (variables for the started
+  process) and `env_replace` (start from exactly those variables instead of
+  merging them). Only the `local` provider supports it; a policy that sets it on
+  `ssh` or `k8s` fails at load. Results and the AI approver prompt show the
+  variable names, never their values. Providers take a new `env_replace`
+  keyword in `Provider.run`.
 
 ### Security
 
