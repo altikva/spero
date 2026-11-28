@@ -10,15 +10,18 @@
 
 Each probe is read-only and speaks to the target only through ``provider.run``,
 using argv-style commands (no shell): ``pgrep`` / ``systemctl is-active`` /
-``ss`` / ``df``, never a ``ps | awk`` pipeline or a grep over localized output.
+``ss`` or ``netstat`` / ``df``, never a ``ps | awk`` pipeline or a grep over localized output.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import ClassVar
 
 from spero.probes.base import Probe, ProbeResult
 from spero.providers.base import Provider
+from spero.providers.command import NOT_FOUND_RC
 
 
 class ProcessProbe(Probe):
@@ -57,22 +60,42 @@ class SystemdProbe(Probe):
 
 
 class PortProbe(Probe):
-    """Healthy iff something is listening on the TCP port."""
+    """Healthy iff something is listening on the TCP port.
+
+    Asks ``ss -ltnH`` and falls back to ``netstat -an`` where ``ss`` is missing
+    (macOS, BSD, minimal Linux images). ``netstat`` lists every listening socket
+    without privileges on both macOS and Linux, unlike ``lsof``, which only shows
+    the calling user's processes. The tool that answered is remembered, so later
+    checks go straight to it. When neither exists the result says the sockets
+    could not be queried, which is not the same as "nothing listening".
+    """
 
     type: ClassVar[str] = "port"
 
     def __init__(self, port: int, host: str | None = None) -> None:
         self.port = int(port)
         self.host = host
+        self._tool: _SocketTool | None = None
 
     async def check(self, provider: Provider) -> ProbeResult:
-        r = await provider.run(["ss", "-ltnH"], timeout=15)
-        if not r.ok:
-            return ProbeResult(False, f"could not query listening sockets: {r.stderr.strip()}")
-        listening = _listening_on(r.stdout, self.port, self.host)
-        if listening:
-            return ProbeResult(True, f"listening on port {self.port}")
-        return ProbeResult(False, f"nothing listening on port {self.port}")
+        tools = [self._tool] if self._tool is not None else list(_SOCKET_TOOLS)
+        for tool in tools:
+            r = await provider.run(list(tool.argv), timeout=15)
+            if r.returncode == NOT_FOUND_RC:
+                continue
+            if not r.ok:
+                return ProbeResult(
+                    False, f"could not query listening sockets with {tool.name}: {r.stderr.strip()}"
+                )
+            self._tool = tool
+            if tool.listening_on(r.stdout, self.port, self.host):
+                return ProbeResult(True, f"listening on port {self.port}")
+            return ProbeResult(False, f"nothing listening on port {self.port}")
+        self._tool = None
+        names = " or ".join(t.name for t in _SOCKET_TOOLS)
+        return ProbeResult(
+            False, f"cannot query listening sockets: {names} not found on the target"
+        )
 
 
 class DiskProbe(Probe):
@@ -99,6 +122,10 @@ class DiskProbe(Probe):
         return ProbeResult(healthy, f"{self.path} at {used}% (threshold {self.threshold_pct}%)")
 
 
+def _bind_matches(bind: str, host: str | None) -> bool:
+    return host is None or bind in (host, "*", "0.0.0.0", "[::]", "::")
+
+
 def _listening_on(ss_output: str, port: int, host: str | None) -> bool:
     """Scan `ss -ltnH` output for a listening socket on the given port."""
     suffix = f":{port}"
@@ -107,14 +134,41 @@ def _listening_on(ss_output: str, port: int, host: str | None) -> bool:
         if len(cols) < 4:
             continue
         local = cols[3]  # Local Address:Port
-        if not local.endswith(suffix):
-            continue
-        if host is not None:
-            bind = local[: -len(suffix)]
-            if bind not in (host, "*", "0.0.0.0", "[::]", "::"):
-                continue
-        return True
+        if local.endswith(suffix) and _bind_matches(local[: -len(suffix)], host):
+            return True
     return False
+
+
+def _listening_on_netstat(netstat_output: str, port: int, host: str | None) -> bool:
+    """Scan `netstat -an` output for a TCP socket in LISTEN state on the given port.
+
+    Linux writes the local address as ``0.0.0.0:8080`` or ``:::8080``; macOS and
+    the BSDs write ``*.8080``, ``127.0.0.1.8080`` or ``::1.8080``.
+    """
+    for line in netstat_output.splitlines():
+        cols = line.split()
+        if len(cols) < 6 or not cols[0].startswith("tcp") or cols[-1] != "LISTEN":
+            continue
+        local = cols[3]
+        cut = max(local.rfind(":"), local.rfind("."))
+        if cut < 0 or local[cut + 1 :] != str(port):
+            continue
+        if _bind_matches(local[:cut], host):
+            return True
+    return False
+
+
+@dataclass(frozen=True, slots=True)
+class _SocketTool:
+    name: str
+    argv: tuple[str, ...]
+    listening_on: Callable[[str, int, str | None], bool]
+
+
+_SOCKET_TOOLS: tuple[_SocketTool, ...] = (
+    _SocketTool("ss", ("ss", "-ltnH"), _listening_on),
+    _SocketTool("netstat", ("netstat", "-an"), _listening_on_netstat),
+)
 
 
 def _parse_df_use_pct(df_output: str) -> int | None:
