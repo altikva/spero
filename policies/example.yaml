@@ -11,6 +11,11 @@ targets:
       params:
         unit: nginx.service
       interval: 30
+    # crash-loop breaker: after 4 restarts within 600 s, the next failure stops
+    # remediation and alerts; `spero reset nginx` resumes it
+    breaker:
+      max_restarts: 4
+      window_s: 600
     remediations:
       - type: restart
         params:

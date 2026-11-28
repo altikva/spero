@@ -21,6 +21,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Contributor License Agreement**: `CLA.md` and `CONTRIBUTING.md`. A `cla`
   check on every pull request asks contributors to sign once, by posting a
   comment, before their first contribution is merged.
+- **Crash-loop breaker**: an optional per-target `breaker: {max_restarts, window_s}`.
+  Once `max_restarts` successful remediations fall within `window_s` seconds,
+  the next failure trips it: no more remediation, a `breaker` event, an alert,
+  and a `tripped` status. The state lives in the store (`breaker_state` table),
+  so it survives a restart of `spero watch`. `spero reset <target>` clears it,
+  and `spero status` shows a Breaker column.
 - **`respawn` environment**: optional `env` (variables for the started
   process) and `env_replace` (start from exactly those variables instead of
   merging them). Only the `local` provider supports it; a policy that sets it on

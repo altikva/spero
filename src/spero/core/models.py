@@ -46,11 +46,21 @@ class RemediationSpec(BaseModel):
     max_attempts: int = 2
 
 
+class BreakerSpec(BaseModel):
+    """Crash-loop breaker: after ``max_restarts`` successful remediations within
+    ``window_s`` seconds, the next failure trips it and remediation stops until a
+    human resets the target."""
+
+    max_restarts: int = Field(ge=1)
+    window_s: int = Field(ge=1)
+
+
 class TargetPolicy(BaseModel):
     name: str
     provider: str = "local"  # "local" or "ssh:[user@]host[:port]"
     probe: ProbeSpec
     remediations: list[RemediationSpec] = Field(default_factory=list)
+    breaker: BreakerSpec | None = None
 
     @field_validator("provider")
     @classmethod

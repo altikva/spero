@@ -23,11 +23,13 @@ only as far as its ``autonomy`` allows:
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
 from spero.alerting.base import Alerter, NullAlerter
+from spero.core.breaker import BreakerState, BreakerStore, MemoryBreakerStore
 from spero.core.models import Autonomy, Policy, RemediationSpec, TargetPolicy
 from spero.probes import build_probe
 from spero.providers.base import Provider
@@ -52,6 +54,7 @@ class ActionStatus(StrEnum):
     awaiting_approval = "awaiting_approval"  # autonomy=gated, approver declined
     applied = "applied"  # executed successfully
     failed = "failed"  # executed but the action reported failure
+    tripped = "tripped"  # crash-loop breaker tripped, a human must reset the target
 
 
 @dataclass(slots=True)
@@ -91,6 +94,8 @@ class Engine:
         approver: Approver = deny_all,
         approver_name: str = "approver",
         alerter: Alerter | None = None,
+        breaker_store: BreakerStore | None = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self.policy = policy
         self.provider_factory = provider_factory
@@ -99,6 +104,8 @@ class Engine:
         # (e.g. "human", "ai", "owner"). `auto` actions are attributed to the policy.
         self.approver_name = approver_name
         self.alerter = alerter or NullAlerter()
+        self.breaker_store: BreakerStore = breaker_store or MemoryBreakerStore()
+        self.clock = clock
         self._failures: dict[str, int] = {}
         self._open_alerts: set[str] = set()
         # Targets dropped by a reload. A probe already in flight when its target was
@@ -221,6 +228,23 @@ class Engine:
             )
         spec = eligible[-1]
 
+        breaker: BreakerState | None = None
+        if target.breaker is not None:
+            breaker = await asyncio.to_thread(self.breaker_store.load, target.name)
+            if breaker.tripped:
+                return ActionOutcome(spec.type, ActionStatus.tripped, breaker.detail)
+            now = self.clock()
+            if breaker.should_trip(target.breaker, now):
+                breaker.tripped_at = now
+                breaker.detail = (
+                    f"{len(breaker.restarts)} restarts within {target.breaker.window_s}s; "
+                    f"remediation stopped until `spero reset {target.name}`"
+                )
+                await asyncio.to_thread(self.breaker_store.save, target.name, breaker)
+                self._record(node, target.name, "breaker", f"tripped: {breaker.detail}")
+                await self.alerter.fire(target.name, f"restart breaker tripped: {breaker.detail}")
+                return ActionOutcome(spec.type, ActionStatus.tripped, breaker.detail)
+
         if self.policy.frozen:
             self._record(node, target.name, "remediation", f"frozen: skipped {spec.type}")
             return ActionOutcome(spec.type, ActionStatus.frozen)
@@ -245,6 +269,10 @@ class Engine:
             # target takes time to come back. A genuinely still-broken target will
             # re-accumulate failures and escalate again from the bottom of the ladder.
             self._failures[target.name] = 0
+            if breaker is not None and target.breaker is not None:
+                breaker.restarts.append(self.clock())
+                breaker.prune(target.breaker, self.clock())
+                await asyncio.to_thread(self.breaker_store.save, target.name, breaker)
             return ActionOutcome(spec.type, ActionStatus.applied, res.detail)
         return ActionOutcome(spec.type, ActionStatus.failed, res.detail)
 

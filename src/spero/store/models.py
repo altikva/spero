@@ -50,3 +50,14 @@ class Event(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, index=True
     )
+
+
+class BreakerRow(Base):
+    """Crash-loop breaker state of one target (see ``spero.core.breaker``)."""
+
+    __tablename__ = "breaker_state"
+
+    target: Mapped[str] = mapped_column(String(255), primary_key=True)
+    restarts: Mapped[str] = mapped_column(Text, default="[]")  # JSON list of epoch seconds
+    tripped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    detail: Mapped[str] = mapped_column(Text, default="")
