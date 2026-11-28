@@ -41,8 +41,20 @@ class Supervisor:
         alerter: Alerter | None = None,
     ) -> None:
         self.policy = policy
+        breaker_store = None
+        if store_engine is not None:
+            from sqlalchemy import Engine as SAEngine
+
+            from spero.store.breaker import SQLBreakerStore
+
+            if isinstance(store_engine, SAEngine):
+                breaker_store = SQLBreakerStore(store_engine)
         self.engine = Engine(
-            policy, approver=approver, approver_name=approver_name, alerter=alerter
+            policy,
+            approver=approver,
+            approver_name=approver_name,
+            alerter=alerter,
+            breaker_store=breaker_store,
         )
         self.store_engine = store_engine
         self.latest: dict[str, TargetOutcome] = {}

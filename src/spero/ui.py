@@ -37,6 +37,7 @@ STATUS_STYLE = {
     ActionStatus.suggested: "cyan",
     ActionStatus.awaiting_approval: "magenta",
     ActionStatus.waiting: "dim",
+    ActionStatus.tripped: "bold red",
 }
 
 # Target-grid column headers, in order.

@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import time
 
 import questionary
 import typer
@@ -42,6 +43,7 @@ from spero.probes import build_probe
 from spero.providers.host import make_provider
 from spero.remediations import build_remediation
 from spero.store import Event, init_db, make_engine, recent_events
+from spero.store.breaker import SQLBreakerStore
 from spero.ui import BANNER, STATUS_STYLE
 
 app = typer.Typer(add_completion=False, help="Spero - self-healing supervision agent.")
@@ -111,10 +113,37 @@ def status(
     table.add_column("Provider")
     table.add_column("Probe")
     table.add_column("Autonomy")
+    table.add_column("Breaker")
+    breakers = SQLBreakerStore(_store_engine()) if any(t.breaker for t in p.targets) else None
     for t in p.targets:
         autonomy = ", ".join(sorted({r.autonomy.value for r in t.remediations})) or "-"
-        table.add_row(t.name, t.provider, t.probe.type, autonomy)
+        table.add_row(t.name, t.provider, t.probe.type, autonomy, _breaker_cell(t, breakers))
     console.print(table)
+
+
+def _breaker_cell(t: TargetPolicy, breakers: SQLBreakerStore | None) -> str:
+    if t.breaker is None or breakers is None:
+        return "-"
+    state = breakers.load(t.name)
+    if state.tripped:
+        return "[bold red]tripped[/]"
+    state.prune(t.breaker, time.time())
+    return f"{len(state.restarts)}/{t.breaker.max_restarts} in {t.breaker.window_s}s"
+
+
+@app.command()
+def reset(
+    target: str = typer.Argument(..., help="Target whose restart breaker to reset."),
+) -> None:
+    """Reset a target's crash-loop breaker so remediation resumes.
+
+    Clears the restart history too. A running daemon picks it up at the target's
+    next check.
+    """
+    if SQLBreakerStore(_store_engine()).reset(target):
+        console.print(f"[green]breaker reset[/] for {target}")
+    else:
+        console.print(f"[dim]{target}: breaker was not tripped (restart history cleared)[/]")
 
 
 @app.command()
@@ -139,16 +168,18 @@ async def _run_once(policy_obj: object, *, ai_approve: bool, store: bool) -> Non
 
     assert isinstance(policy_obj, Policy)
     approver = AIApprover(_llm()).approve if ai_approve else deny_all
+    store_engine = _store_engine() if store else None
     engine = Engine(
         policy_obj,
         approver=approver,
         approver_name="ai" if ai_approve else "human",
         alerter=make_alerter(settings),
+        breaker_store=SQLBreakerStore(store_engine) if store_engine is not None else None,
     )
     outcomes = await engine.run_cycle()
     _render_outcomes(outcomes)
-    if store:
-        await engine.persist(_store_engine())
+    if store_engine is not None:
+        await engine.persist(store_engine)
 
 
 @app.command()
@@ -197,13 +228,14 @@ async def _run_watch(
 
     assert isinstance(policy_obj, Policy)
     approver = AIApprover(_llm()).approve if ai_approve else deny_all
+    store_engine = _store_engine() if store else None
     engine = Engine(
         policy_obj,
         approver=approver,
         approver_name="ai" if ai_approve else "human",
         alerter=make_alerter(settings),
+        breaker_store=SQLBreakerStore(store_engine) if store_engine is not None else None,
     )
-    store_engine = _store_engine() if store else None
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -260,7 +292,12 @@ def _log_reload(result: object) -> None:
 def _log_outcome(outcome: TargetOutcome) -> None:
     # Quiet on the happy path; a daemon should only speak when something matters.
     action = outcome.action
-    noteworthy = {ActionStatus.applied, ActionStatus.failed, ActionStatus.awaiting_approval}
+    noteworthy = {
+        ActionStatus.applied,
+        ActionStatus.failed,
+        ActionStatus.awaiting_approval,
+        ActionStatus.tripped,
+    }
     if outcome.healthy and not (action and action.status in noteworthy):
         return
     when = _now()

@@ -9,10 +9,11 @@
 """Persistence: the event/audit store (a node registry and an append-only event trail)."""
 
 from spero.store.db import init_db, make_engine, recent_events, session_scope
-from spero.store.models import Base, Event, Node
+from spero.store.models import Base, BreakerRow, Event, Node
 
 __all__ = [
     "Base",
+    "BreakerRow",
     "Event",
     "Node",
     "init_db",
