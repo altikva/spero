@@ -31,6 +31,14 @@ _SYSTEM = (
 _AFFIRMATIVE = frozenset({"yes", "approve", "approved"})
 
 
+def _params_for_prompt(params: dict[str, object]) -> dict[str, object]:
+    """Policy params as shown to the model: ``env`` values are masked, keys kept."""
+    env = params.get("env")
+    if not isinstance(env, dict):
+        return params
+    return {**params, "env": dict.fromkeys(env, "***")}
+
+
 class AIApprover:
     def __init__(self, llm: LLMClient, *, context: str = "", timeout: float = 30.0) -> None:
         self.llm = llm
@@ -38,9 +46,10 @@ class AIApprover:
         self.timeout = timeout
 
     async def approve(self, target: TargetPolicy, spec: RemediationSpec) -> bool:
+        params = _params_for_prompt(spec.params)
         prompt = (
             f"Target '{target.name}' (provider {target.provider}) is unhealthy and the "
-            f"policy proposes remediation '{spec.type}' with params {spec.params}.\n"
+            f"policy proposes remediation '{spec.type}' with params {params}.\n"
             f"{self.context}\n"
             "Approve running this remediation now? Answer yes or no."
         )

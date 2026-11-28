@@ -74,6 +74,11 @@ class TargetPolicy(BaseModel):
         last = 0
         for spec in self.remediations:
             rem = build_remediation(spec)
+            if getattr(rem, "env", None) is not None and self.provider != "local":
+                raise ValueError(
+                    f"remediation {spec.type!r} sets env, which only the 'local' provider "
+                    f"supports (target {self.name!r} uses {self.provider!r})"
+                )
             if getattr(rem, "destructive", False) and spec.autonomy is Autonomy.auto:
                 raise ValueError(
                     f"remediation {spec.type!r} is destructive; autonomy 'auto' is not allowed "

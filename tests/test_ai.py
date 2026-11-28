@@ -100,6 +100,17 @@ async def test_ai_approver_exact_match_only() -> None:
     assert await AIApprover(NullLLM()).approve(target, spec) is False
 
 
+async def test_ai_approver_never_sends_env_values_to_the_model() -> None:
+    target = TargetPolicy(name="api", probe={"type": "process", "params": {"name": "api"}})
+    spec = RemediationSpec(
+        type="respawn", params={"start": "/opt/api/run", "env": {"API_TOKEN": "s3cr3t"}}
+    )
+    llm = FakeLLM("no")
+    await AIApprover(llm).approve(target, spec)
+    assert "API_TOKEN" in llm.prompts[0]
+    assert "s3cr3t" not in llm.prompts[0]
+
+
 async def test_ai_approver_fails_closed_on_llm_error() -> None:
     class BoomLLM(LLMClient):
         async def complete(self, prompt: str, *, system: str | None = None) -> str:

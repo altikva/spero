@@ -10,7 +10,10 @@
 
 from __future__ import annotations
 
+import pytest
+
 from _fakes import ScriptedProvider, fixed
+from spero.core.models import RemediationSpec
 from spero.remediations import build_remediation
 from spero.remediations.host import KillProcess, RespawnProcess, RestartService, RotateLogs
 
@@ -39,6 +42,52 @@ async def test_respawn_without_user_tokenizes() -> None:
     provider = ScriptedProvider(fixed(0))
     await RespawnProcess(start="/opt/app/run --daemon").apply(provider)
     assert provider.commands == [["/opt/app/run", "--daemon"]]
+
+
+async def test_respawn_passes_no_env_by_default() -> None:
+    provider = ScriptedProvider(fixed(0))
+    await RespawnProcess(start="/opt/app/run").apply(provider)
+    assert provider.envs == [(None, False)]
+
+
+async def test_respawn_merges_env() -> None:
+    provider = ScriptedProvider(fixed(0))
+    res = await RespawnProcess(start="/opt/app/run", env={"PORT": "8080"}).apply(provider)
+    assert provider.envs == [({"PORT": "8080"}, False)]
+    assert res.detail == "started '/opt/app/run' (env merged: PORT)"
+
+
+async def test_respawn_replaces_env_and_keeps_values_out_of_the_result() -> None:
+    provider = ScriptedProvider(fixed(0))
+    rem = RespawnProcess(
+        start="/opt/app/run", env={"PATH": "/usr/bin", "TOKEN": "s3cr3t"}, env_replace=True
+    )
+    res = await rem.apply(provider)
+    assert provider.envs == [({"PATH": "/usr/bin", "TOKEN": "s3cr3t"}, True)]
+    assert "s3cr3t" not in res.detail
+    assert "/usr/bin" not in res.detail
+    assert "PATH, TOKEN" in res.detail
+
+
+async def test_respawn_env_with_user_still_uses_runuser_argv() -> None:
+    provider = ScriptedProvider(fixed(0))
+    await RespawnProcess(start="/opt/app/run", user="app", env={"A": "1"}).apply(provider)
+    assert provider.commands == [["runuser", "-u", "app", "--", "/opt/app/run"]]
+    assert provider.envs == [({"A": "1"}, False)]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"start": "x", "env": {"PORT": 8080}},
+        {"start": "x", "env": ["A=1"]},
+        {"start": "x", "env": {"A": "1"}, "env_replace": "yes"},
+        {"start": "x", "env_replace": True},
+    ],
+)
+def test_respawn_rejects_bad_env_params(params: dict[str, object]) -> None:
+    with pytest.raises(ValueError, match="bad params for remediation 'respawn'"):
+        build_remediation(RemediationSpec(type="respawn", params=params))
 
 
 async def test_kill_treats_no_match_as_success() -> None:

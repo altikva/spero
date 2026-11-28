@@ -109,3 +109,32 @@ def test_decreasing_max_attempts_rejected() -> None:
                   - {type: kill, params: {name: nginx}, max_attempts: 2}
             """
         )
+
+
+def test_respawn_env_accepted_on_local_provider() -> None:
+    p = load_policy_str(
+        """
+        targets:
+          - name: api
+            probe: {type: process, params: {name: api}}
+            remediations:
+              - type: respawn
+                params: {start: /opt/api/run, env: {PORT: "8080"}, env_replace: false}
+        """
+    )
+    assert p.targets[0].remediations[0].params["env"] == {"PORT": "8080"}
+
+
+@pytest.mark.parametrize("provider", ["ssh:ops@web-01", "k8s:prod/default"])
+def test_respawn_env_rejected_at_load_on_remote_providers(provider: str) -> None:
+    with pytest.raises(ValidationError, match="only the 'local' provider"):
+        load_policy_str(
+            f"""
+            targets:
+              - name: api
+                provider: {provider}
+                probe: {{type: process, params: {{name: api}}}}
+                remediations:
+                  - {{type: respawn, params: {{start: /opt/api/run, env: {{PORT: "8080"}}}}}}
+            """
+        )
