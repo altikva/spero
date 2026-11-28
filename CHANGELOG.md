@@ -28,6 +28,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   variable names, never their values. Providers take a new `env_replace`
   keyword in `Provider.run`.
 
+### Fixed
+
+- **`port` probe without `ss`**: the probe now falls back to `netstat -an`
+  where `ss` is missing (macOS, BSD, minimal Linux images) instead of always
+  failing. When neither tool exists, it reports that the sockets could not be
+  queried, a different message from "nothing listening".
+
 ### Security
 
 - The `mcp` extra now requires fastmcp 3.2 or later. fastmcp 2.x carried open
